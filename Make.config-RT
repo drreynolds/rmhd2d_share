@@ -33,11 +33,6 @@ DISCRETIZATION =
 # Entropy formulation:   -DENTROPY_FORMULATION (default is energy)
 #     NOTE: this only currently works with CD4
 #
-# NOTE: if the architecture that the application will be running 
-# on defines the C long int as having 64 bits, then the flag 
-# -DLONGINT8 must be set in order to guarantee accuracy in the 
-# F90-C interface for the implicit solver.
-#
 # NOTE: the directive RTSOURCE turns on source terms in the y-momentum
 # and energy equation corresponding to gravity
 #
