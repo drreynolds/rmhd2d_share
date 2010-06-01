@@ -1,0 +1,6 @@
+ &tminit
+  b0=1.d0,
+  beta=0.008d0,
+  aradius=1.d0,
+ &end
+

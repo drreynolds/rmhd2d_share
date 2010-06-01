@@ -1,0 +1,6 @@
+ &fwprec
+  NWaves=8,
+  ordering=0,
+  ADIcorrection=0,
+ &end
+
