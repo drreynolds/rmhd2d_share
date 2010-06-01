@@ -11,15 +11,6 @@
 DIMENSION = -DTWO_D  # reconnection
 #DIMENSION = -DTWO_D -DTWO_HALF_D  # tearing/tilt mode, lin. waves, or KH
 
-# boundary conditions: -DXPERIODIC, -DXREFLECT, -DY*, -DZ*
-#     default is zero-gradient in each direction, and 
-#     periodic BCs have precedence over reflecting.
-BOUNDARY_CONDS = -DXPERIODIC -DYREFLECT  # reconnection, tearing mode
-#BOUNDARY_CONDS = -DXPERIODIC  # Kelvin-Helmholtz
-#BOUNDARY_CONDS = -DXREFLECT -DYPERIODIC  # tilt mode
-#BOUNDARY_CONDS = # tilt mode (testing)
-#BOUNDARY_CONDS = -DXPERIODIC -DYPERIODIC  # linear waves
-
 # CD vs. upwind:         -DUPWIND     (default is CD)
 # order of CD:  -DTCD (Tuned CD), -DCD4 (4th-order)  
 #            (default is 2nd-order, with TCD preferred over CD4)
@@ -64,7 +55,6 @@ EXTRADEFS = -DPARALLEL -DDYNAMIC
 HYPRE_DEFS =
 
 # overall problem-specific preprocessor directives
-PROB_DEFS = $(DIMENSION) $(BOUNDARY_CONDS) $(DISCRETIZATION) \
-            $(EXTRADEFS) $(PRECOND) $(HYPRE_DEFS)
+PROB_DEFS = $(DIMENSION) $(DISCRETIZATION) $(EXTRADEFS) $(HYPRE_DEFS)
 
 ####### End of Make.config #######

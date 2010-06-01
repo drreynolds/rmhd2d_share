@@ -10,11 +10,6 @@
 #       test problem uses -DTWO_D -DTWO_HALF_D
 DIMENSION = -DTWO_D
 
-# boundary conditions: -DXPERIODIC, -DXREFLECT, -DY*, -DZ*
-#     default is zero-gradient in each direction, and 
-#     periodic BCs have precedence over reflecting.
-BOUNDARY_CONDS = -DXPERIODIC -DYREFLECT
-
 # CD vs. upwind:         -DUPWIND     (default is CD)
 # order of CD:  -DTCD (Tuned CD), -DCD4 (4th-order)  
 #            (default is 2nd-order, with TCD preferred over CD4)
@@ -57,7 +52,6 @@ EXTRADEFS = -DPARALLEL -DRTSOURCE -DDYNAMIC
 HYPRE_DEFS =
 
 # overall problem-specific preprocessor directives
-PROB_DEFS = $(DIMENSION) $(BOUNDARY_CONDS) $(DISCRETIZATION) \
-            $(EXTRADEFS) $(PRECOND) $(HYPRE_DEFS)
+PROB_DEFS = $(DIMENSION) $(DISCRETIZATION) $(EXTRADEFS) $(HYPRE_DEFS)
 
 ####### End of Make.config #######
