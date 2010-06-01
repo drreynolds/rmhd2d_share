@@ -1,3 +1,8 @@
+ &prec
+  hprec = 0,
+  vprec = 0,
+  method = 0,
+ &end
  &fwprec
   NWaves=8,
   ordering=0,
