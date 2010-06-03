@@ -140,10 +140,9 @@ c     initialize viscous preconditioner components (if used)
 
 #ifdef PARALLEL
 c        viscous preconditioner for momentum equation
-         call FVPrecDuInit(xlocal, ylocal, zlocal, dx, dy, dz, 
-     &        nspecies, xghost, yghost, zghost, Xprocs, Yprocs, 
-     &        Zprocs, iprocx, iprocy, iprocz, left, right, top, 
-     &        bottom, forward, behind, xbc, ybc, zbc, kier)
+         call FVPrecDuInit(xlocal, ylocal, dx, dy, nspecies, xghost, 
+     &        yghost, Xprocs, Yprocs, iprocx, iprocy, left, right, top, 
+     &        bottom, xbc, ybc, kier)
          call MPI_Allreduce( kier, kiertot, 1, MPI_INTEGER, MPI_SUM, 
      &        comm3d, ierr)
          if (kiertot /= 0) then
@@ -156,10 +155,9 @@ c        viscous preconditioner for momentum equation
          call mpi_barrier(comm3d,ierr)
 
 c        resistive preconditioner for magnetic field equation
-         call FVPrecDbInit(xlocal, ylocal, zlocal, dx, dy, dz, 
-     &        nspecies, xghost, yghost, zghost, Xprocs, Yprocs, 
-     &        Zprocs, iprocx, iprocy, iprocz, left, right, top, 
-     &        bottom, forward, behind, xbc, ybc, zbc, kier)
+         call FVPrecDbInit(xlocal, ylocal, dx, dy, nspecies, xghost, 
+     &        yghost, Xprocs, Yprocs, iprocx, iprocy, left, right, top, 
+     &        bottom, xbc, ybc, kier)
          call MPI_Allreduce( kier, kiertot, 1, MPI_INTEGER, MPI_SUM, 
      &        comm3d, ierr)
          if (kiertot /= 0) then
@@ -172,10 +170,9 @@ c        resistive preconditioner for magnetic field equation
          call mpi_barrier(comm3d,ierr)
          
 c        heat conduction preconditioner for total energy equation
-         call FVPrecDeInit(xlocal, ylocal, zlocal, dx, dy, dz, 
-     &        nspecies, xghost, yghost, zghost, Xprocs, Yprocs, 
-     &        Zprocs, iprocx, iprocy, iprocz, left, right, top, 
-     &        bottom, forward, behind, xbc, ybc, zbc, kier)
+         call FVPrecDeInit(xlocal, ylocal, dx, dy, nspecies, xghost, 
+     &        yghost, Xprocs, Yprocs, iprocx, iprocy, left, right, top, 
+     &        bottom, xbc, ybc, kier)
          call MPI_Allreduce( kier, kiertot, 1, MPI_INTEGER, MPI_SUM, 
      &        comm3d, ierr)
          if (kiertot /= 0) then
@@ -190,9 +187,8 @@ c        heat conduction preconditioner for total energy equation
 #else
 
 c        viscous preconditioner for momentum equation
-         call FVPrecDuInit(xlocal, ylocal, zlocal, dx, dy, dz, 
-     &        nspecies, xghost, yghost, zghost, Xprocs, Yprocs, 
-     &        Zprocs, 0, 0, 0, 0, 0, 0, 0, 0, 0, xbc, ybc, zbc, kier)
+         call FVPrecDuInit(xlocal, ylocal, dx, dy, nspecies, xghost, 
+     &        yghost, Xprocs, Yprocs, 0, 0, 0, 0, 0, 0, xbc, ybc, kier)
          if (kier /= 0) then
             print '(A,A,i2)',' combo_prec_init: FVPrecDuInit',
      &           ' failed, ier =',kier 
@@ -200,9 +196,8 @@ c        viscous preconditioner for momentum equation
          endif
          
 c        resistive preconditioner for magnetic field equation
-         call FVPrecDbInit(xlocal, ylocal, zlocal, dx, dy, dz, 
-     &        nspecies, xghost, yghost, zghost, Xprocs, Yprocs, 
-     &        Zprocs, 0, 0, 0, 0, 0, 0, 0, 0, 0, xbc, ybc, zbc, kier)
+         call FVPrecDbInit(xlocal, ylocal, dx, dy, nspecies, xghost, 
+     &        yghost, Xprocs, Yprocs, 0, 0, 0, 0, 0, 0, xbc, ybc, kier)
          if (kier /= 0) then
             print '(A,A,i2)',' combo_prec_init: FVPrecDbInit',
      &           ' failed, ier =',kier 
@@ -210,9 +205,8 @@ c        resistive preconditioner for magnetic field equation
          endif
          
 c        heat conduction preconditioner for total energy equation
-         call FVPrecDeInit(xlocal, ylocal, zlocal, dx, dy, dz, 
-     &        nspecies, xghost, yghost, zghost, Xprocs, Yprocs, 
-     &        Zprocs, 0, 0, 0, 0, 0, 0, 0, 0, 0, xbc, ybc, zbc, kier)
+         call FVPrecDeInit(xlocal, ylocal, dx, dy, nspecies, xghost, 
+     &        yghost, Xprocs, Yprocs, 0, 0, 0, 0, 0, 0, xbc, ybc, kier)
          if (kier /= 0) then
             print '(A,A,i2)',' combo_prec_init: FVPrecDeInit',
      &           ' failed, ier =',kier 
@@ -325,22 +319,22 @@ c        set non-dimensionalization parameters to 1 (unused)
          Pr = 1.D0
          Lu = 1.D0
 
-         call fvprecdusetup(uu, gamdt, mu, Re, v1, v2, kier)
+         call FVPrecDuSetup(uu, gamdt, mu, Re, v1, v2, kier)
          if (kier /= 0) then
-            write(0,*) '    fvprecdusetup error =', kier
+            write(0,*) '    FVPrecDuSetup error =', kier
             return
          endif
          
-         call fvprecdbsetup(uu, gamdt, Lu, eta, v1, v2, kier)
+         call FVPrecDbSetup(uu, gamdt, Lu, eta, v1, v2, kier)
          if (kier /= 0) then
-            write(0,*) '    fvprecdbsetup error =', kier
+            write(0,*) '    FVPrecDbSetup error =', kier
             return
          endif
          
-         call fvprecdesetup(uu, gamdt, gamma, kappa, Re, Pr, rgas, 
+         call FVPrecDeSetup(uu, gamdt, gamma, kappa, Re, Pr, rgas, 
      &        v1, v2, kier)
          if (kier /= 0) then
-            write(0,*) '    fvprecdesetup error =', kier
+            write(0,*) '    FVPrecDeSetup error =', kier
             return
          endif
       endif         
