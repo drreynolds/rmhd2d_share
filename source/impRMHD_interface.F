@@ -1236,6 +1236,7 @@ c======= Inclusions ===========
       use mesh
       use properties
       use timelevel_data
+      use profiling
 
 c======= Declarations =========
       implicit none
@@ -1260,10 +1261,12 @@ c     set differencing factors
 
 
 c     construct the vector of primitive variables
+      call prof_start(7)
       call ConservedToPrimitive(uu,vv)
-
+      call prof_stop(7)
 
 c     zero the fluxes (necessary???)
+      call prof_start(8)
       do l=1,nvar,1
          do k=izlo,izhi,1
             do j=iylo,iyhi,1
@@ -1308,10 +1311,12 @@ c     get the viscous flux requirements dudx and dbdx
       call GradientVector(dudx)
       call GradientVector(dbdx)
 #endif
+      call prof_stop(8)
 
 c     construct the face-centered x-directional fluxes
 c
 c     Hyperbolic fluxes
+      call prof_start(9)
       inlo = ixlo;  inhi = ixhi
 #ifdef UPWIND
 #ifdef PRIMITIVE
@@ -1340,8 +1345,10 @@ c        2nd-order standard central differences
       call InviscidFluxCD2(finv,vv,1,dt)
 #endif
 #endif
+      call prof_stop(9)
 c
 c     Parabolic fluxes
+      call prof_start(10)
       inlo = ixlo;  inhi = ixhi
       indx = 1;  indy = 0;  indz = 0
 #ifndef NOVISCFLUX
@@ -1356,12 +1363,14 @@ c        2nd-order standard central differences
       call ViscousFluxCD2(fvis,vv,dudx,dbdx,1,dt,indx,indy,indz)
 #endif
 #endif
+      call prof_stop(10)
 
 
 c     construct the face-centered y-directional fluxes (2D,2.5D,3D)
 #ifndef ONE_D
 c
 c     Hyperbolic fluxes
+      call prof_start(11)
       inlo = iylo;  inhi = iyhi
 #ifdef UPWIND
 #ifdef PRIMITIVE
@@ -1390,8 +1399,10 @@ c        2nd-order standard central differences
       call InviscidFluxCD2(ginv,vv,2,dt)
 #endif
 #endif
+      call prof_stop(11)
 c
 c     Parabolic fluxes
+      call prof_start(12)
       inlo = iylo;  inhi = iyhi
       indx = 0;  indy = 1;  indz = 0
 #ifndef NOVISCFLUX
@@ -1406,12 +1417,14 @@ c        2nd-order standard central differences
       call ViscousFluxCD2(gvis,vv,dudx,dbdx,2,dt,indx,indy,indz)
 #endif
 #endif
+      call prof_stop(12)
 
 
 c     construct the face-centered z-directional fluxes (3D)
 #ifndef TWO_D
 c
 c     Hyperbolic fluxes
+      call prof_start(13)
       inlo = izlo;  inhi = izhi
 #ifdef UPWIND
 #ifdef PRIMITIVE
@@ -1440,8 +1453,10 @@ c        2nd-order standard central differences
       call InviscidFluxCD2(hinv,vv,3,dt)
 #endif
 #endif
+      call prof_stop(13)
 c
 c     Parabolic fluxes
+      call prof_start(14)
       inlo = izlo;  inhi = izhi
       indx = 0;  indy = 0;  indz = 1
 #ifndef NOVISCFLUX
@@ -1456,11 +1471,13 @@ c        2nd-order standard central differences
       call ViscousFluxCD2(hvis,vv,dudx,dbdx,3,dt,indx,indy,indz)
 #endif
 #endif
+      call prof_stop(14)
 #endif
 #endif
 
 
 c     do the final construction of the new div(flux) term
+      call prof_start(15)
 c
 c     Density
       do k=1,nzlocal,1
@@ -1664,6 +1681,7 @@ c
          end do
       end do
 #endif
+      call prof_stop(15)
 
       return
       end subroutine divFlux
