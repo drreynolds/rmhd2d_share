@@ -117,6 +117,7 @@ c           dt    - current timestep increment
 c-----------------------------------------------------------------------
 c======= Inclusions ===========
       use mesh
+      use mesh_common
       use timelevel_data
       use profiling
 
@@ -130,6 +131,10 @@ c     calling variables
 c     local variables
       double precision :: onemth
       integer :: i, j, k, l
+
+      double precision :: fIn,rhoIn,uxIn,uyIn,uzIn,bxIn,byIn,bzIn,eIn
+      integer, dimension(3) :: maxf, maxrho, maxux, maxuy, maxuz, maxbx, 
+     &     maxby, maxbz, maxe
 
 c======= Internals ============
 
@@ -173,6 +178,50 @@ c     Rayleigh-Taylor sources due to gravity (Froude=1e4)
       enddo
 #endif
 c
+
+
+c     root node outputs residual information
+c        ||f||
+      call fnvmhdmaxnorm(fval,fIn)
+c        ||rho||
+      call fnvmhdmaxnormvar(fval,1,rhoIn)
+      maxrho = maxloc(fval(1:nxlocal,1:nylocal,1:nzlocal,1))
+c        ||ux||
+      call fnvmhdmaxnormvar(fval,2,uxIn)
+      maxux = maxloc(fval(1:nxlocal,1:nylocal,1:nzlocal,2))
+c        ||uy||
+      call fnvmhdmaxnormvar(fval,3,uyIn)
+      maxuy = maxloc(fval(1:nxlocal,1:nylocal,1:nzlocal,3))
+c        ||uz||
+      call fnvmhdmaxnormvar(fval,4,uzIn)
+      maxuz = maxloc(fval(1:nxlocal,1:nylocal,1:nzlocal,4))
+c        ||bx||
+      call fnvmhdmaxnormvar(fval,5,bxIn)
+      maxbx = maxloc(fval(1:nxlocal,1:nylocal,1:nzlocal,5))
+c        ||by||
+      call fnvmhdmaxnormvar(fval,6,byIn)
+      maxby = maxloc(fval(1:nxlocal,1:nylocal,1:nzlocal,6))
+c        ||bz||
+      call fnvmhdmaxnormvar(fval,7,bzIn)
+      maxbz = maxloc(fval(1:nxlocal,1:nylocal,1:nzlocal,7))
+c        ||e||
+      call fnvmhdmaxnormvar(fval,8,eIn)
+      maxe = maxloc(fval(1:nxlocal,1:nylocal,1:nzlocal,8))
+      if (iprocx==1 .and. iprocy==1 .and. iprocz==1) then
+         write(6,'(A,es11.4)') '  max|f(u)|  =',fIn
+         write(6,'(A)')        '  -----------------------------'
+       write(6,'(A,es11.4,A,3(i4))') '  max|f_rho| =',rhoIn,' at',maxrho
+         write(6,'(A,es11.4,A,3(i4))') '  max|f_ux|  =',uxIn,' at',maxux
+         write(6,'(A,es11.4,A,3(i4))') '  max|f_uy|  =',uyIn,' at',maxuy
+         write(6,'(A,es11.4,A,3(i4))') '  max|f_uz|  =',uzIn,' at',maxuz
+         write(6,'(A,es11.4,A,3(i4))') '  max|f_Bx|  =',bxIn,' at',maxbx
+         write(6,'(A,es11.4,A,3(i4))') '  max|f_By|  =',byIn,' at',maxby
+         write(6,'(A,es11.4,A,3(i4))') '  max|f_Bz|  =',bzIn,' at',maxbz
+         write(6,'(A,es11.4,A,3(i4))') '  max|f_e|   =',eIn,' at',maxe
+         write(6,'(A)')        '  -----------------------------'
+      end if
+
+
 
 c     stop the RHS profiler 
       call prof_stop(2)
@@ -1116,17 +1165,15 @@ c======= Declarations =========
 
       double precision, dimension(ixlo:ixhi,iylo:iyhi,izlo:izhi,nvar) 
      &                 :: ux, fsc, fval
-      double precision :: f2n, f2nall, fIn, fInall
-      double precision :: rho2n, rho2nall, rhoIn, rhoInall
-      double precision :: ux2n, ux2nall, uxIn, uxInall
-      double precision :: uy2n, uy2nall, uyIn, uyInall
-      double precision :: uz2n, uz2nall, uzIn, uzInall
-      double precision :: bx2n, bx2nall, bxIn, bxInall
-      double precision :: by2n, by2nall, byIn, byInall
-      double precision :: bz2n, bz2nall, bzIn, bzInall
-      double precision :: e2n, e2nall, eIn, eInall
-      integer          :: maxproc, maxnormloc(4)
-      integer          :: maxlocsend(5), maxlocrecv(5)
+      double precision :: f2n, fIn
+      double precision :: rho2n, rhoIn
+      double precision :: ux2n, uxIn
+      double precision :: uy2n, uyIn
+      double precision :: uz2n, uzIn
+      double precision :: bx2n, bxIn
+      double precision :: by2n, byIn
+      double precision :: bz2n, bzIn
+      double precision :: e2n, eIn
 
 c======= Internals ============
 

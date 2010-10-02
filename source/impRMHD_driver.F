@@ -225,14 +225,14 @@ c        set current timelevel information into saved variables
          dFold = dFnew
          uold  = ux
 
-c$$$c        output initial residual information
-c$$$         call prof_start(6)
-c$$$         if(outnode) write(6,'(A)')  
-c$$$     &        '\n  ------------- before kinsol solution ------------'
-c$$$         call fkfunDiags(ux,fscale)
-c$$$         if(outnode) write(6,'(A)') 
-c$$$     &        '  -------------------------------------------------'
-c$$$         call prof_stop(6)
+c        output initial residual information
+         call prof_start(6)
+         if(outnode) write(6,'(A)')  
+     &        '\n  ------------- before kinsol solution ------------'
+         call fkfunDiags(ux,fscale)
+         if(outnode) write(6,'(A)') 
+     &        '  -------------------------------------------------'
+         call prof_stop(6)
 
 c        call Kinsol to solve for new time step
          call fkinsol(ux, globalstrat, uscale, fscale, kier)
@@ -351,7 +351,7 @@ c            call WriteAVSFile(ux,timeStep)
 
 
 c     output final solver diagnostics
-      if (outnode) write(6,'(A,A,4(A,i9),11(A,es12.5),A)') 
+      if (outnode) write(6,'(A,A,4(A,i9),29(A,es12.5),A)') 
      &     '\n  ---------------------------------------',
      &     '\n  Runtime statistics:\n',
      &     '\n    Total Newton Iterations =',totnewton, 
@@ -384,8 +384,8 @@ c     output final solver diagnostics
      &   '\n    Avg VFlux-X Time        =',prof_time(10)/prof_count(10),
      &   '\n    Avg HFlux-Y Time        =',prof_time(11)/prof_count(11),
      &   '\n    Avg VFlux-Y Time        =',prof_time(12)/prof_count(12),
-     &   '\n    Avg HFlux-X Time        =',prof_time(13)/prof_count(13),
-     &   '\n    Avg VFlux-X Time        =',prof_time(14)/prof_count(14),
+     &   '\n    Avg HFlux-Z Time        =',prof_time(13)/prof_count(13),
+     &   '\n    Avg VFlux-Z Time        =',prof_time(14)/prof_count(14),
      &   '\n    Avg Divergence Time     =',prof_time(15)/prof_count(15),
      &     '\n  ---------------------------------------\n'
 
