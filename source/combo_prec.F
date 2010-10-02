@@ -3,14 +3,15 @@ c-----------------------------------------------------------------------
 c     Daniel R. Reynolds
 c     SMU Mathematics
 c
-c     This file implements a solver for the viscous preconditioning 
-c     components, which calls multigrid solver modules from the C 
-c     routines defined in the file viscous_prec.h.  These routines
-c     handle the block-diagonal solves in the viscous system.  The
-c     lower-triangular block products are computed via a standard 
-c     finite-difference Jacobian-vector product, albeit used in a 
-c     non-standard way.  For discussion of the solver, see the 
-c     paper.
+c     This file implements a solver for a combination of hyperbolic and 
+c     viscous preconditioning components.  It can handle any 
+c     combination of using the two preconditioners, from none to one to 
+c     both.  If both are used, we combine them together using an 
+c     approach based on the input parameter "method":
+c         1 => operator-split preconditioning, hprec then vprec
+c         2 => operator-split preconditioning, vprec then hprec
+c         3 => predictor-corrector preconditioning, hprec then vprec
+c         4 => predictor-corrector preconditioning, vprec then hprec
 c=======================================================================
 
 
