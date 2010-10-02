@@ -203,6 +203,8 @@ void *VPrecDuAlloc(long int Nx, long int Ny, double dx, double dy,
 
   /*    initializing solver diagnostic information */
   pdata->totIters = 0;
+  pdata->Tsetup = 0.0;
+  pdata->Tsolve = 0.0;
 
   /*    set up the grid */
   /*       create grid object */
@@ -389,11 +391,28 @@ void *VPrecDuAlloc(long int Nx, long int Ny, double dx, double dy,
   /*       assemble the graph */
   HYPRE_SStructGraphAssemble(pdata->graph);
 
+  /*    set up the matrix */
+  HYPRE_SStructMatrixCreate(pdata->comm, pdata->graph, &(pdata->Du));
+  HYPRE_SStructMatrixSetObjectType(pdata->Du, pdata->mattype);
+  HYPRE_SStructMatrixInitialize(pdata->Du);
+
+  /*    set up the vectors */
+  HYPRE_SStructVectorCreate(pdata->comm, pdata->grid, &(pdata->bvec));
+  HYPRE_SStructVectorCreate(pdata->comm, pdata->grid, &(pdata->xvec));
+  HYPRE_SStructVectorSetObjectType(pdata->bvec, pdata->mattype);
+  HYPRE_SStructVectorSetObjectType(pdata->xvec, pdata->mattype);
+  HYPRE_SStructVectorInitialize(pdata->bvec);
+  HYPRE_SStructVectorInitialize(pdata->xvec);
+  
+  /* allocate temporary array containing matrix values */
+  /* (since the temporary vectors are only 8*Nx*Ny long) */
+  pdata->matvals = (double *) malloc(9*Nx*Ny*sizeof(double));
+
 
   /********************************/
   /*  continue with general setup */
 
-  /*    set Du, b and x init flags to 0 at first */
+  /*    init flags to 0 at first */
   pdata->DuInit = 0;
 
   /* set Solver default options into pdata */
@@ -428,6 +447,8 @@ void VPrecDuFree(void *P_data)
 
     /* free the various components */
     HYPRE_SStructMatrixDestroy(pdata->Du);
+    HYPRE_SStructVectorDestroy(pdata->xvec);
+    HYPRE_SStructVectorDestroy(pdata->bvec);
     HYPRE_SStructGraphDestroy(pdata->graph);
 #ifdef TWO_HALF_D
     HYPRE_SStructStencilDestroy(pdata->wzStencil);
@@ -435,6 +456,7 @@ void VPrecDuFree(void *P_data)
     HYPRE_SStructStencilDestroy(pdata->wyStencil);
     HYPRE_SStructStencilDestroy(pdata->wxStencil);
     HYPRE_SStructGridDestroy(pdata->grid);
+    free(pdata->matvals);
 
     /* finally, free the pdata structure */
     free(pdata);
@@ -473,29 +495,15 @@ int VPrecDuSetup(double *uu, double gamdt, double Mu,
   long int ix, iy, idx, Ybl;
   int ilower[2], iupper[2], selfentries[5], nextentries[9];
   int xLface, xRface, yLface, yRface, IdLoc;
-  double dx, dy, dxi2, dyi2, dxdyfac, rhofact, IdVal;
-  double *matvals, uxvals[14], uyvals[14], uzvals[5];
+  double dx, dy, dxi2, dyi2, dxdyfac, rhofact, IdVal, Tstart, Tstop;
+  double uxvals[14], uyvals[14], uzvals[5];
 
+  /* start timer */
+  Tstart = MPI_Wtime();
 
   /* recast P_data as the correct structure */
   ViscPrecDuData pdata;
   pdata = (ViscPrecDuData) P_data;
-
-  /* destroy old matrix if necessary */
-  if (pdata->DuInit == 1) {
-    HYPRE_SStructMatrixDestroy(pdata->Du);
-    pdata->DuInit = 0;
-  }
-    
-  /* create the SStruct matrix, and set init flag */
-  HYPRE_SStructMatrixCreate(pdata->comm, pdata->graph, &(pdata->Du));
-  pdata->DuInit = 1;
-
-  /* set matrix storage type */
-  HYPRE_SStructMatrixSetObjectType(pdata->Du, pdata->mattype);
-
-  /* initialize matrix */
-  HYPRE_SStructMatrixInitialize(pdata->Du);
 
   /* get grid information shortcuts */
   Nx  = pdata->Nx;
@@ -507,11 +515,6 @@ int VPrecDuSetup(double *uu, double gamdt, double Mu,
   dxi2 = 1.0/dx/dx;
   dyi2 = 1.0/dy/dy;
   dxdyfac = 1.0/dx/dy/12.0;
-
-  /* allocate temporary array containing matrix values */
-  /* (since the temporary vectors are only 8*Nx*Ny long) */
-  matvals = (double *) malloc(9*Nx*Ny*sizeof(double));
-
 
   /* uxvals holds [unscaled] template for ux stencil */
   uxvals[0]  = dyi2;                         /* ux, bottom */
@@ -590,11 +593,11 @@ int VPrecDuSetup(double *uu, double gamdt, double Mu,
     Ybl = (iy+NGy) * (Nx+2*NGx);
     for (ix=0; ix<Nx; ix++) {
       rhofact = -gamdt*Mu*uu[Ybl + ix + NGx];
-      matvals[idx++] = rhofact*uxvals[0];
-      matvals[idx++] = rhofact*uxvals[1];
-      matvals[idx++] = rhofact*uxvals[2];
-      matvals[idx++] = rhofact*uxvals[3];
-      matvals[idx++] = rhofact*uxvals[4];
+      pdata->matvals[idx++] = rhofact*uxvals[0];
+      pdata->matvals[idx++] = rhofact*uxvals[1];
+      pdata->matvals[idx++] = rhofact*uxvals[2];
+      pdata->matvals[idx++] = rhofact*uxvals[3];
+      pdata->matvals[idx++] = rhofact*uxvals[4];
     }
   }
   /*       ix=0 face adjustment */
@@ -603,13 +606,15 @@ int VPrecDuSetup(double *uu, double gamdt, double Mu,
     if (pdata->xbc == 2) {       /* reflecting */
       for (iy=0; iy<Ny; iy++) {
 	idx = 5*(iy*Nx + ix);
-	matvals[idx+2] -= matvals[idx+1];  matvals[idx+1] = 0.0;
+	pdata->matvals[idx+2] -= pdata->matvals[idx+1];  
+	pdata->matvals[idx+1] = 0.0;
       }
     }
     else if (pdata->xbc == 0) {  /* zero-gradient */
       for (iy=0; iy<Ny; iy++) {
 	idx = 5*(iy*Nx + ix);
-	matvals[idx+2] += matvals[idx+1];  matvals[idx+1] = 0.0;
+	pdata->matvals[idx+2] += pdata->matvals[idx+1];  
+	pdata->matvals[idx+1] = 0.0;
       }
     }
   }
@@ -619,14 +624,16 @@ int VPrecDuSetup(double *uu, double gamdt, double Mu,
     if (pdata->xbc == 2) {     /* reflecting */
       for (iy=0; iy<Ny; iy++) {
 	idx = 5*(iy*Nx + ix);
-	matvals[idx+2] -= matvals[idx+3];  matvals[idx+3] = 0.0;
+	pdata->matvals[idx+2] -= pdata->matvals[idx+3];  
+	pdata->matvals[idx+3] = 0.0;
       }
     }
   }
   else if (pdata->xbc == 0) {  /* zero-gradient */
       for (iy=0; iy<Ny; iy++) {
 	idx = 5*(iy*Nx + ix);
-	matvals[idx+2] += matvals[idx+3];  matvals[idx+3] = 0.0;
+	pdata->matvals[idx+2] += pdata->matvals[idx+3];  
+	pdata->matvals[idx+3] = 0.0;
       }
   }
   if (pdata->ybc != 1) {       /* not periodic */
@@ -636,7 +643,8 @@ int VPrecDuSetup(double *uu, double gamdt, double Mu,
       for (ix=0; ix<Nx; ix++) {
 	idx = 5*(iy*Nx + ix);
 	/* reflecting and zero-gradient the same at this face */
-	matvals[idx+2] += matvals[idx];  matvals[idx] = 0.0;
+	pdata->matvals[idx+2] += pdata->matvals[idx];  
+	pdata->matvals[idx] = 0.0;
       }
     }
     /*       iy=Ny-1 face adjustment */
@@ -645,14 +653,15 @@ int VPrecDuSetup(double *uu, double gamdt, double Mu,
       for (ix=0; ix<Nx; ix++) {
 	idx = 5*(iy*Nx + ix);
 	/* reflecting and zero-gradient the same at this face */
-	matvals[idx+2] += matvals[idx+4];  matvals[idx+4] = 0.0;
+	pdata->matvals[idx+2] += pdata->matvals[idx+4];  
+	pdata->matvals[idx+4] = 0.0;
       }
     }
   }
   ilower[0] = pdata->iXL;  ilower[1] = pdata->iYL;
   iupper[0] = pdata->iXR;  iupper[1] = pdata->iYR;
-  HYPRE_SStructMatrixSetBoxValues(pdata->Du, 0, ilower, 
-				  iupper, 0, 5, selfentries, matvals);
+  HYPRE_SStructMatrixSetBoxValues(pdata->Du, 0, ilower, iupper, 0, 5, 
+				  selfentries, pdata->matvals);
 
 
   /* set ux stencil couplings to uy */
@@ -662,15 +671,15 @@ int VPrecDuSetup(double *uu, double gamdt, double Mu,
     Ybl = (iy+NGy) * (Nx+2*NGx);
     for (ix=0; ix<Nx; ix++) {
       rhofact = -gamdt*Mu*uu[Ybl + ix + NGx];
-      matvals[idx++] = rhofact*uxvals[5];
-      matvals[idx++] = rhofact*uxvals[6];
-      matvals[idx++] = rhofact*uxvals[7];
-      matvals[idx++] = rhofact*uxvals[8];
-      matvals[idx++] = rhofact*uxvals[9];
-      matvals[idx++] = rhofact*uxvals[10];
-      matvals[idx++] = rhofact*uxvals[11];
-      matvals[idx++] = rhofact*uxvals[12];
-      matvals[idx++] = rhofact*uxvals[13];
+      pdata->matvals[idx++] = rhofact*uxvals[5];
+      pdata->matvals[idx++] = rhofact*uxvals[6];
+      pdata->matvals[idx++] = rhofact*uxvals[7];
+      pdata->matvals[idx++] = rhofact*uxvals[8];
+      pdata->matvals[idx++] = rhofact*uxvals[9];
+      pdata->matvals[idx++] = rhofact*uxvals[10];
+      pdata->matvals[idx++] = rhofact*uxvals[11];
+      pdata->matvals[idx++] = rhofact*uxvals[12];
+      pdata->matvals[idx++] = rhofact*uxvals[13];
     }
   }
   if (pdata->xbc != 1) {       /* not periodic */
@@ -680,9 +689,12 @@ int VPrecDuSetup(double *uu, double gamdt, double Mu,
       for (iy=0; iy<Ny; iy++) {
 	idx = 9*(iy*Nx + ix);
 	/* reflecting and zero gradient are the same at this face */
-	matvals[idx+1] += matvals[idx];    matvals[idx]   = 0.0;
-	matvals[idx+4] += matvals[idx+3];  matvals[idx+3] = 0.0;
-	matvals[idx+7] += matvals[idx+6];  matvals[idx+6] = 0.0;
+	pdata->matvals[idx+1] += pdata->matvals[idx];    
+	pdata->matvals[idx]   = 0.0;
+	pdata->matvals[idx+4] += pdata->matvals[idx+3];  
+	pdata->matvals[idx+3] = 0.0;
+	pdata->matvals[idx+7] += pdata->matvals[idx+6];  
+	pdata->matvals[idx+6] = 0.0;
       }
     }
     /*       ix=Nx-1 face adjustment */
@@ -691,9 +703,12 @@ int VPrecDuSetup(double *uu, double gamdt, double Mu,
       for (iy=0; iy<Ny; iy++) {
 	idx = 9*(iy*Nx + ix);
 	/* reflecting and zero gradient are the same at this face */
-	matvals[idx+1] += matvals[idx+2];  matvals[idx+2] = 0.0;
-	matvals[idx+4] += matvals[idx+5];  matvals[idx+5] = 0.0;
-	matvals[idx+7] += matvals[idx+8];  matvals[idx+8] = 0.0;
+	pdata->matvals[idx+1] += pdata->matvals[idx+2];  
+	pdata->matvals[idx+2] = 0.0;
+	pdata->matvals[idx+4] += pdata->matvals[idx+5];  
+	pdata->matvals[idx+5] = 0.0;
+	pdata->matvals[idx+7] += pdata->matvals[idx+8];  
+	pdata->matvals[idx+8] = 0.0;
       }
     }
   }
@@ -703,17 +718,23 @@ int VPrecDuSetup(double *uu, double gamdt, double Mu,
     if (pdata->ybc == 2) {       /* reflecting */
       for (ix=0; ix<Nx; ix++) {
 	idx = 9*(iy*Nx + ix);
-	matvals[idx+3] -= matvals[idx];    matvals[idx]   = 0.0;
-	matvals[idx+4] -= matvals[idx+1];  matvals[idx+1] = 0.0;
-	matvals[idx+5] -= matvals[idx+2];  matvals[idx+2] = 0.0;
+	pdata->matvals[idx+3] -= pdata->matvals[idx];    
+	pdata->matvals[idx]   = 0.0;
+	pdata->matvals[idx+4] -= pdata->matvals[idx+1];  
+	pdata->matvals[idx+1] = 0.0;
+	pdata->matvals[idx+5] -= pdata->matvals[idx+2];  
+	pdata->matvals[idx+2] = 0.0;
       }
     }
     else if (pdata->ybc == 0) {  /* zero gradient */
       for (ix=0; ix<Nx; ix++) {
 	idx = 9*(iy*Nx + ix);
-	matvals[idx+3] += matvals[idx];    matvals[idx]   = 0.0;
-	matvals[idx+4] += matvals[idx+1];  matvals[idx+1] = 0.0;
-	matvals[idx+5] += matvals[idx+2];  matvals[idx+2] = 0.0;
+	pdata->matvals[idx+3] += pdata->matvals[idx];    
+	pdata->matvals[idx]   = 0.0;
+	pdata->matvals[idx+4] += pdata->matvals[idx+1];  
+	pdata->matvals[idx+1] = 0.0;
+	pdata->matvals[idx+5] += pdata->matvals[idx+2];  
+	pdata->matvals[idx+2] = 0.0;
       }
     }
   }
@@ -723,30 +744,36 @@ int VPrecDuSetup(double *uu, double gamdt, double Mu,
     if (pdata->ybc == 2) {       /* reflecting */
       for (ix=0; ix<Nx; ix++) {
 	idx = 9*(iy*Nx + ix);
-	matvals[idx+3] -= matvals[idx+6];  matvals[idx+6] = 0.0;
-	matvals[idx+4] -= matvals[idx+7];  matvals[idx+7] = 0.0;
-	matvals[idx+5] -= matvals[idx+8];  matvals[idx+8] = 0.0;
+	pdata->matvals[idx+3] -= pdata->matvals[idx+6];  
+	pdata->matvals[idx+6] = 0.0;
+	pdata->matvals[idx+4] -= pdata->matvals[idx+7];  
+	pdata->matvals[idx+7] = 0.0;
+	pdata->matvals[idx+5] -= pdata->matvals[idx+8];  
+	pdata->matvals[idx+8] = 0.0;
       }
     }
     else if (pdata->ybc == 0) {  /* zero gradient */
       for (ix=0; ix<Nx; ix++) {
 	idx = 9*(iy*Nx + ix);
-	matvals[idx+3] += matvals[idx+6];  matvals[idx+6] = 0.0;
-	matvals[idx+4] += matvals[idx+7];  matvals[idx+7] = 0.0;
-	matvals[idx+5] += matvals[idx+8];  matvals[idx+8] = 0.0;
+	pdata->matvals[idx+3] += pdata->matvals[idx+6];  
+	pdata->matvals[idx+6] = 0.0;
+	pdata->matvals[idx+4] += pdata->matvals[idx+7];  
+	pdata->matvals[idx+7] = 0.0;
+	pdata->matvals[idx+5] += pdata->matvals[idx+8];  
+	pdata->matvals[idx+8] = 0.0;
       }
     }
   }
   ilower[0] = pdata->iXL;  ilower[1] = pdata->iYL;
   iupper[0] = pdata->iXR;  iupper[1] = pdata->iYR;
-  HYPRE_SStructMatrixSetBoxValues(pdata->Du, 0, ilower, 
-				  iupper, 0, 9, nextentries, matvals);
+  HYPRE_SStructMatrixSetBoxValues(pdata->Du, 0, ilower, iupper, 0, 9, 
+				  nextentries, pdata->matvals);
 
 
   /* add one to matrix diagonal for identity contribution */
-  for (ix=0; ix<Nx*Ny; ix++)  matvals[ix] = IdVal;
-  HYPRE_SStructMatrixAddToBoxValues(pdata->Du, 0, ilower, 
-				    iupper, 0, 1, &IdLoc, matvals);
+  for (ix=0; ix<Nx*Ny; ix++)  pdata->matvals[ix] = IdVal;
+  HYPRE_SStructMatrixAddToBoxValues(pdata->Du, 0, ilower, iupper, 0, 1, 
+				    &IdLoc, pdata->matvals);
 
 
 
@@ -757,11 +784,11 @@ int VPrecDuSetup(double *uu, double gamdt, double Mu,
     Ybl = (iy+NGy) * (Nx+2*NGx);
     for (ix=0; ix<Nx; ix++) {
       rhofact = -gamdt*Mu*uu[Ybl + ix + NGx];
-      matvals[idx++] = rhofact*uyvals[0];
-      matvals[idx++] = rhofact*uyvals[1];
-      matvals[idx++] = rhofact*uyvals[2];
-      matvals[idx++] = rhofact*uyvals[3];
-      matvals[idx++] = rhofact*uyvals[4];
+      pdata->matvals[idx++] = rhofact*uyvals[0];
+      pdata->matvals[idx++] = rhofact*uyvals[1];
+      pdata->matvals[idx++] = rhofact*uyvals[2];
+      pdata->matvals[idx++] = rhofact*uyvals[3];
+      pdata->matvals[idx++] = rhofact*uyvals[4];
     }
   }
   if (pdata->xbc != 1) {      /* not periodic */
@@ -771,7 +798,8 @@ int VPrecDuSetup(double *uu, double gamdt, double Mu,
       for (iy=0; iy<Ny; iy++) {
 	idx = 5*(iy*Nx + ix);
 	/* reflecting and zero gradient are the same at this face */
-	matvals[idx+2] += matvals[idx+1];  matvals[idx+1] = 0.0;
+	pdata->matvals[idx+2] += pdata->matvals[idx+1];  
+	pdata->matvals[idx+1] = 0.0;
       }
     }
     /*       ix=Nx-1 face adjustment */
@@ -780,7 +808,8 @@ int VPrecDuSetup(double *uu, double gamdt, double Mu,
       for (iy=0; iy<Ny; iy++) {
 	idx = 5*(iy*Nx + ix);
 	/* reflecting and zero gradient are the same at this face */
-	matvals[idx+2] += matvals[idx+3];  matvals[idx+3] = 0.0;
+	pdata->matvals[idx+2] += pdata->matvals[idx+3];  
+	pdata->matvals[idx+3] = 0.0;
       }
     }
   }
@@ -790,13 +819,15 @@ int VPrecDuSetup(double *uu, double gamdt, double Mu,
     if (pdata->ybc == 2) {       /* reflecting */
       for (ix=0; ix<Nx; ix++) {
 	idx = 5*(iy*Nx + ix);
-	matvals[idx+2] -= matvals[idx];  matvals[idx] = 0.0;
+	pdata->matvals[idx+2] -= pdata->matvals[idx];  
+	pdata->matvals[idx] = 0.0;
       }
     }
     else if (pdata->ybc == 0) {  /* zero gradient */
       for (ix=0; ix<Nx; ix++) {
 	idx = 5*(iy*Nx + ix);
-	matvals[idx+2] += matvals[idx];  matvals[idx] = 0.0;
+	pdata->matvals[idx+2] += pdata->matvals[idx];  
+	pdata->matvals[idx] = 0.0;
       }
     }
   }
@@ -806,20 +837,22 @@ int VPrecDuSetup(double *uu, double gamdt, double Mu,
     if (pdata->ybc == 2) {       /* reflecting */
       for (ix=0; ix<Nx; ix++) {
 	idx = 5*(iy*Nx + ix);
-	matvals[idx+2] -= matvals[idx+4];  matvals[idx+4] = 0.0;
+	pdata->matvals[idx+2] -= pdata->matvals[idx+4];  
+	pdata->matvals[idx+4] = 0.0;
       }
     }
     else if (pdata->ybc == 0) {  /* zero gradient */
       for (ix=0; ix<Nx; ix++) {
 	idx = 5*(iy*Nx + ix);
-	matvals[idx+2] += matvals[idx+4];  matvals[idx+4] = 0.0;
+	pdata->matvals[idx+2] += pdata->matvals[idx+4];  
+	pdata->matvals[idx+4] = 0.0;
       }
     }
   }
   ilower[0] = pdata->iXL;  ilower[1] = pdata->iYL;
   iupper[0] = pdata->iXR;  iupper[1] = pdata->iYR;
-  HYPRE_SStructMatrixSetBoxValues(pdata->Du, 0, ilower, 
-				  iupper, 1, 5, selfentries, matvals);
+  HYPRE_SStructMatrixSetBoxValues(pdata->Du, 0, ilower, iupper, 1, 5, 
+				  selfentries, pdata->matvals);
 
 
   /* set uy stencil couplings to ux */
@@ -828,15 +861,15 @@ int VPrecDuSetup(double *uu, double gamdt, double Mu,
     Ybl = (iy+NGy) * (Nx+2*NGx);
     for (ix=0; ix<Nx; ix++) {
       rhofact = -gamdt*Mu*uu[Ybl + ix + NGx];
-      matvals[idx++] = rhofact*uyvals[5];
-      matvals[idx++] = rhofact*uyvals[6];
-      matvals[idx++] = rhofact*uyvals[7];
-      matvals[idx++] = rhofact*uyvals[8];
-      matvals[idx++] = rhofact*uyvals[9];
-      matvals[idx++] = rhofact*uyvals[10];
-      matvals[idx++] = rhofact*uyvals[11];
-      matvals[idx++] = rhofact*uyvals[12];
-      matvals[idx++] = rhofact*uyvals[13];
+      pdata->matvals[idx++] = rhofact*uyvals[5];
+      pdata->matvals[idx++] = rhofact*uyvals[6];
+      pdata->matvals[idx++] = rhofact*uyvals[7];
+      pdata->matvals[idx++] = rhofact*uyvals[8];
+      pdata->matvals[idx++] = rhofact*uyvals[9];
+      pdata->matvals[idx++] = rhofact*uyvals[10];
+      pdata->matvals[idx++] = rhofact*uyvals[11];
+      pdata->matvals[idx++] = rhofact*uyvals[12];
+      pdata->matvals[idx++] = rhofact*uyvals[13];
     }
   }
   /*       ix=0 face adjustment */
@@ -845,17 +878,23 @@ int VPrecDuSetup(double *uu, double gamdt, double Mu,
     if (pdata->xbc == 2) {       /* reflecting */ 
       for (iy=0; iy<Ny; iy++) {
 	idx = 9*(iy*Nx + ix);
-	matvals[idx+1] -= matvals[idx];    matvals[idx]   = 0.0;
-	matvals[idx+4] -= matvals[idx+3];  matvals[idx+3] = 0.0;
-	matvals[idx+7] -= matvals[idx+6];  matvals[idx+6] = 0.0;
+	pdata->matvals[idx+1] -= pdata->matvals[idx];    
+	pdata->matvals[idx]   = 0.0;
+	pdata->matvals[idx+4] -= pdata->matvals[idx+3];  
+	pdata->matvals[idx+3] = 0.0;
+	pdata->matvals[idx+7] -= pdata->matvals[idx+6];  
+	pdata->matvals[idx+6] = 0.0;
       }
     }
     else if (pdata->xbc == 0) {  /* zero gradient */
       for (iy=0; iy<Ny; iy++) {
 	idx = 9*(iy*Nx + ix);
-	matvals[idx+1] += matvals[idx];    matvals[idx]   = 0.0;
-	matvals[idx+4] += matvals[idx+3];  matvals[idx+3] = 0.0;
-	matvals[idx+7] += matvals[idx+6];  matvals[idx+6] = 0.0;
+	pdata->matvals[idx+1] += pdata->matvals[idx];    
+	pdata->matvals[idx]   = 0.0;
+	pdata->matvals[idx+4] += pdata->matvals[idx+3];  
+	pdata->matvals[idx+3] = 0.0;
+	pdata->matvals[idx+7] += pdata->matvals[idx+6];  
+	pdata->matvals[idx+6] = 0.0;
       }
     }
   }
@@ -865,17 +904,23 @@ int VPrecDuSetup(double *uu, double gamdt, double Mu,
     if (pdata->xbc == 2) {       /* reflecting */
       for (iy=0; iy<Ny; iy++) {
 	idx = 9*(iy*Nx + ix);
-	matvals[idx+1] -= matvals[idx+2];  matvals[idx+2] = 0.0;
-	matvals[idx+4] -= matvals[idx+5];  matvals[idx+5] = 0.0;
-	matvals[idx+7] -= matvals[idx+8];  matvals[idx+8] = 0.0;
+	pdata->matvals[idx+1] -= pdata->matvals[idx+2];  
+	pdata->matvals[idx+2] = 0.0;
+	pdata->matvals[idx+4] -= pdata->matvals[idx+5];  
+	pdata->matvals[idx+5] = 0.0;
+	pdata->matvals[idx+7] -= pdata->matvals[idx+8];  
+	pdata->matvals[idx+8] = 0.0;
       }
     }
     else if (pdata->xbc == 0) {  /* zero gradient */
       for (iy=0; iy<Ny; iy++) {
 	idx = 9*(iy*Nx + ix);
-	matvals[idx+1] += matvals[idx+2];  matvals[idx+2] = 0.0;
-	matvals[idx+4] += matvals[idx+5];  matvals[idx+5] = 0.0;
-	matvals[idx+7] += matvals[idx+8];  matvals[idx+8] = 0.0;
+	pdata->matvals[idx+1] += pdata->matvals[idx+2];  
+	pdata->matvals[idx+2] = 0.0;
+	pdata->matvals[idx+4] += pdata->matvals[idx+5];  
+	pdata->matvals[idx+5] = 0.0;
+	pdata->matvals[idx+7] += pdata->matvals[idx+8];  
+	pdata->matvals[idx+8] = 0.0;
       }
     }
   }
@@ -886,9 +931,12 @@ int VPrecDuSetup(double *uu, double gamdt, double Mu,
       for (ix=0; ix<Nx; ix++) {
 	idx = 9*(iy*Nx + ix);
 	/* reflecting and zero gradient are the same at this face */
-	matvals[idx+3] += matvals[idx];    matvals[idx]   = 0.0;
-	matvals[idx+4] += matvals[idx+1];  matvals[idx+1] = 0.0;
-	matvals[idx+5] += matvals[idx+2];  matvals[idx+2] = 0.0;
+	pdata->matvals[idx+3] += pdata->matvals[idx];    
+	pdata->matvals[idx]   = 0.0;
+	pdata->matvals[idx+4] += pdata->matvals[idx+1];  
+	pdata->matvals[idx+1] = 0.0;
+	pdata->matvals[idx+5] += pdata->matvals[idx+2];  
+	pdata->matvals[idx+2] = 0.0;
       }
     }
   }
@@ -899,22 +947,25 @@ int VPrecDuSetup(double *uu, double gamdt, double Mu,
       for (ix=0; ix<Nx; ix++) {
 	idx = 9*(iy*Nx + ix);
 	/* reflecting and zero gradient are the same at this face */
-	matvals[idx+3] += matvals[idx+6];  matvals[idx+6] = 0.0;
-	matvals[idx+4] += matvals[idx+7];  matvals[idx+7] = 0.0;
-	matvals[idx+5] += matvals[idx+8];  matvals[idx+8] = 0.0;
+	pdata->matvals[idx+3] += pdata->matvals[idx+6];  
+	pdata->matvals[idx+6] = 0.0;
+	pdata->matvals[idx+4] += pdata->matvals[idx+7];  
+	pdata->matvals[idx+7] = 0.0;
+	pdata->matvals[idx+5] += pdata->matvals[idx+8];  
+	pdata->matvals[idx+8] = 0.0;
       }
     }
   }
   ilower[0] = pdata->iXL;  ilower[1] = pdata->iYL;
   iupper[0] = pdata->iXR;  iupper[1] = pdata->iYR;
-  HYPRE_SStructMatrixSetBoxValues(pdata->Du, 0, ilower, 
-				  iupper, 1, 9, nextentries, matvals);
+  HYPRE_SStructMatrixSetBoxValues(pdata->Du, 0, ilower, iupper, 1, 9, 
+				  nextentries, pdata->matvals);
 
 
   /* add one to matrix diagonal for identity contribution */
-  for (ix=0; ix<Nx*Ny; ix++)  matvals[ix] = IdVal;
-  HYPRE_SStructMatrixAddToBoxValues(pdata->Du, 0, ilower, 
-				    iupper, 1, 1, &IdLoc, matvals);
+  for (ix=0; ix<Nx*Ny; ix++)  pdata->matvals[ix] = IdVal;
+  HYPRE_SStructMatrixAddToBoxValues(pdata->Du, 0, ilower, iupper, 1, 1, 
+				    &IdLoc, pdata->matvals);
 
 
 #ifdef TWO_HALF_D
@@ -925,11 +976,11 @@ int VPrecDuSetup(double *uu, double gamdt, double Mu,
     Ybl = (iy+NGy) * (Nx+2*NGx);
     for (ix=0; ix<Nx; ix++) {
       rhofact = -gamdt*Mu*uu[Ybl + ix + NGx];
-      matvals[idx++] = rhofact*uzvals[0];
-      matvals[idx++] = rhofact*uzvals[1];
-      matvals[idx++] = rhofact*uzvals[2];
-      matvals[idx++] = rhofact*uzvals[3];
-      matvals[idx++] = rhofact*uzvals[4];
+      pdata->matvals[idx++] = rhofact*uzvals[0];
+      pdata->matvals[idx++] = rhofact*uzvals[1];
+      pdata->matvals[idx++] = rhofact*uzvals[2];
+      pdata->matvals[idx++] = rhofact*uzvals[3];
+      pdata->matvals[idx++] = rhofact*uzvals[4];
     }
   }
   /*       ix=0 face adjustment */
@@ -939,7 +990,8 @@ int VPrecDuSetup(double *uu, double gamdt, double Mu,
       for (iy=0; iy<Ny; iy++) {
 	idx = 5*(iy*Nx + ix);
 	/* reflecting and zero gradient are the same at this face */
-	matvals[idx+2] += matvals[idx+1];  matvals[idx+1] = 0.0;
+	pdata->matvals[idx+2] += pdata->matvals[idx+1];  
+	pdata->matvals[idx+1] = 0.0;
       }
     }
   }
@@ -950,7 +1002,8 @@ int VPrecDuSetup(double *uu, double gamdt, double Mu,
       for (iy=0; iy<Ny; iy++) {
 	idx = 5*(iy*Nx + ix);
 	/* reflecting and zero gradient are the same at this face */
-	matvals[idx+2] += matvals[idx+3];  matvals[idx+3] = 0.0;
+	pdata->matvals[idx+2] += pdata->matvals[idx+3];  
+	pdata->matvals[idx+3] = 0.0;
       }
     }
   }
@@ -961,7 +1014,8 @@ int VPrecDuSetup(double *uu, double gamdt, double Mu,
       for (ix=0; ix<Nx; ix++) {
 	idx = 5*(iy*Nx + ix);
 	/* reflecting and zero gradient are the same at this face */
-	matvals[idx+2] += matvals[idx];  matvals[idx] = 0.0;
+	pdata->matvals[idx+2] += pdata->matvals[idx];  
+	pdata->matvals[idx] = 0.0;
       }
     }
   }
@@ -972,35 +1026,42 @@ int VPrecDuSetup(double *uu, double gamdt, double Mu,
       for (ix=0; ix<Nx; ix++) {
 	idx = 5*(iy*Nx + ix);
 	/* reflecting and zero gradient are the same at this face */
-	matvals[idx+2] += matvals[idx+4];  matvals[idx+4] = 0.0;
+	pdata->matvals[idx+2] += pdata->matvals[idx+4];  
+	pdata->matvals[idx+4] = 0.0;
       }
     }
   }
   ilower[0] = pdata->iXL;  ilower[1] = pdata->iYL;
   iupper[0] = pdata->iXR;  iupper[1] = pdata->iYR;
-  HYPRE_SStructMatrixSetBoxValues(pdata->Du, 0, ilower, 
-				  iupper, 2, 5, selfentries, matvals);
+  HYPRE_SStructMatrixSetBoxValues(pdata->Du, 0, ilower, iupper, 2, 5, 
+				  selfentries, pdata->matvals);
 
 
   /* add one to matrix diagonal for identity contribution */
-  for (ix=0; ix<Nx*Ny; ix++)  matvals[ix] = IdVal;
-  HYPRE_SStructMatrixAddToBoxValues(pdata->Du, 0, ilower, 
-				    iupper, 2, 1, &IdLoc, matvals);
+  for (ix=0; ix<Nx*Ny; ix++)  pdata->matvals[ix] = IdVal;
+  HYPRE_SStructMatrixAddToBoxValues(pdata->Du, 0, ilower, iupper, 2, 1, 
+				    &IdLoc, pdata->matvals);
 #endif
 
 
   /* assemble matrix */
   HYPRE_SStructMatrixAssemble(pdata->Du);
     
-  /* free temporary array */
-  free(matvals);
-
+  /*       set init flag */
+  pdata->DuInit = 1;
 
 /*   /\* output matrix to file *\/ */
 /*   if ((pdata->outproc)==1) */
 /*     {printf("      printing HYPRE Du matrix to file \n");} */
-/*   char *fname = "Du_precmat"; */
-/*   HYPRE_SStructMatrixPrint(fname, pdata->Du, 0); */
+/*   HYPRE_SStructMatrixPrint("Du.mat", pdata->Du, 0); */
+
+  /* stop timer, add to totals, and output to screen */ 
+  Tstop = MPI_Wtime();
+  pdata->Tsetup += Tstop - Tstart;
+  if ((pdata->outproc) == 1) {
+    printf("Du cumulative setup time: %g\n",pdata->Tsetup);
+    printf("Du cumulative solve time: %g\n",pdata->Tsolve);
+  }
 
   /* return success */ 
   return(0);
@@ -1036,15 +1097,18 @@ int VPrecDuSolve(double *xx, double *bb, double *tmp, double delta, void *P_data
   pdata = (ViscPrecDuData) P_data;
 
   /* local variables */
-  int its, ilower[2], iupper[2];
+  int Sits, Pits, ilower[2], iupper[2];
   long int iy, ix, iv, idx, Nx, NGx, Ny, NGy;
   long int Vbl, Ybl;
-  double finalresid, resid, val, bnorm;
-  HYPRE_SStructVector bvec, xvec;
+  double finalresid, resid, val, bnorm, Tstart, Tstop;
   HYPRE_SStructSolver solver;
+  HYPRE_SStructSolver preconditioner;
   int printl = ((pdata->outproc)==1) ? pdata->sol_printl : 0;
 
   /*   if (printl) printf("     solving Du preconditioner system\n"); */
+
+  /* start timer */
+  Tstart = MPI_Wtime();
 
   /* check that Du matrix initialized */
   if (pdata->DuInit == 0) {
@@ -1057,19 +1121,6 @@ int VPrecDuSolve(double *xx, double *bb, double *tmp, double delta, void *P_data
   NGx = pdata->NGx;
   Ny  = pdata->Ny;
   NGy = pdata->NGy;
-
-  /* create the SStruct vectors and set init flags to 1 */
-  HYPRE_SStructVectorCreate(pdata->comm, pdata->grid, &bvec);
-  HYPRE_SStructVectorCreate(pdata->comm, pdata->grid, &xvec);
-
-  /* set vector storage type */
-  HYPRE_SStructVectorSetObjectType(bvec, pdata->mattype);
-  HYPRE_SStructVectorSetObjectType(xvec, pdata->mattype);
-    
-  /* initialize vectors */
-  HYPRE_SStructVectorInitialize(bvec);
-  HYPRE_SStructVectorInitialize(xvec);
-  
 
   /* convert rhs, solution vectors to HYPRE format:         */
   /*    insert rhs vector entries into HYPRE vectors bvec   */
@@ -1084,8 +1135,9 @@ int VPrecDuSolve(double *xx, double *bb, double *tmp, double delta, void *P_data
       for (ix=NGx; ix<Nx+NGx; ix++)
 	tmp[idx++] = bb[Vbl+Ybl+ix];
     }
-    HYPRE_SStructVectorSetBoxValues(bvec, 0, ilower, iupper, iv-1, tmp);
-    HYPRE_SStructVectorSetBoxValues(xvec, 0, ilower, iupper, iv-1, tmp);
+    HYPRE_SStructVectorSetBoxValues(pdata->bvec, 0, ilower, iupper, iv-1, tmp);
+    for (idx=0; idx<Nx*Ny; idx++)  tmp[idx] = 0.0;
+    HYPRE_SStructVectorSetBoxValues(pdata->xvec, 0, ilower, iupper, iv-1, tmp);
   }
 #ifdef TWO_HALF_D
   iv = 3;
@@ -1096,54 +1148,61 @@ int VPrecDuSolve(double *xx, double *bb, double *tmp, double delta, void *P_data
     for (ix=NGx; ix<Nx+NGx; ix++)
       tmp[idx++] = bb[Vbl+Ybl+ix];
   }
-  HYPRE_SStructVectorSetBoxValues(bvec, 0, ilower, iupper, iv-1, tmp);
-  HYPRE_SStructVectorSetBoxValues(xvec, 0, ilower, iupper, iv-1, tmp);
+  HYPRE_SStructVectorSetBoxValues(pdata->bvec, 0, ilower, iupper, iv-1, tmp);
+  for (idx=0; idx<Nx*Ny; idx++)  tmp[idx] = 0.0;
+  HYPRE_SStructVectorSetBoxValues(pdata->xvec, 0, ilower, iupper, iv-1, tmp);
 #endif
 
   /*    assemble vectors */
-  HYPRE_SStructVectorAssemble(xvec);
-  HYPRE_SStructVectorAssemble(bvec);
+  HYPRE_SStructVectorAssemble(pdata->xvec);
+  HYPRE_SStructVectorAssemble(pdata->bvec);
 
-  /* set up the solver [SysPFMG for now] */
-  /*    create the solver */
-  /*   if (printl) printf("      creating SysPFMG solver \n"); */
-  HYPRE_SStructSysPFMGCreate(pdata->comm, &solver);
+/*   if (printl) printf("Writing out rhs to file u_rhs.vec\n"); */
+/*   HYPRE_SStructVectorPrint("u_rhs.vec", pdata->bvec, 0); */
+
+  /* set up the solver [PCG/SysPFMG] */
+  /*    create the solver & preconditioner */
+  HYPRE_SStructPCGCreate(pdata->comm, &solver);
+  HYPRE_SStructSysPFMGCreate(pdata->comm, &preconditioner);
  
-  /*    set solver options */
-  /*    [could the first 8 of these be done in the PrecAlloc routine?] */
-  /*   if (printl) printf("      setting SysPFMG options \n"); */
-  HYPRE_SStructSysPFMGSetMaxIter(solver, pdata->sol_maxit);
-  HYPRE_SStructSysPFMGSetRelChange(solver, pdata->sol_relch);
-  HYPRE_SStructSysPFMGSetRelaxType(solver, pdata->sol_rlxtype);
-  HYPRE_SStructSysPFMGSetNumPreRelax(solver, pdata->sol_npre);
-  HYPRE_SStructSysPFMGSetNumPostRelax(solver, pdata->sol_npost);
-  HYPRE_SStructSysPFMGSetPrintLevel(solver, pdata->sol_printl);
-  HYPRE_SStructSysPFMGSetLogging(solver, pdata->sol_log);
-  if (delta != 0.0)  HYPRE_SStructSysPFMGSetTol(solver, delta);
-  if (pdata->sol_zeroguess) 
-    HYPRE_SStructSysPFMGSetZeroGuess(solver);
-  /*   if (printl) printf("      calling SysPFMG setup \n"); */
-  HYPRE_SStructSysPFMGSetup(solver, pdata->Du, bvec, xvec);
+  /*    set preconditioner & solver options */
+  HYPRE_SStructSysPFMGSetMaxIter(preconditioner, pdata->sol_maxit/4);
+  HYPRE_SStructSysPFMGSetRelChange(preconditioner, pdata->sol_relch);
+  HYPRE_SStructSysPFMGSetRelaxType(preconditioner, pdata->sol_rlxtype);
+  HYPRE_SStructSysPFMGSetNumPreRelax(preconditioner, pdata->sol_npre);
+  HYPRE_SStructSysPFMGSetNumPostRelax(preconditioner, pdata->sol_npost);
+  HYPRE_SStructPCGSetPrintLevel(solver, pdata->sol_printl);
+  HYPRE_SStructPCGSetLogging(solver, pdata->sol_log);
+  HYPRE_SStructPCGSetRelChange(solver, pdata->sol_relch);
+  HYPRE_SStructPCGSetMaxIter(solver, pdata->sol_maxit);
+  if (delta != 0.0)  HYPRE_SStructPCGSetTol(solver, delta);
+  HYPRE_SStructPCGSetPrecond(solver, 
+			     (HYPRE_PtrToSStructSolverFcn) HYPRE_SStructSysPFMGSolve,  
+			     (HYPRE_PtrToSStructSolverFcn) HYPRE_SStructSysPFMGSetup, 
+			     preconditioner);
+  HYPRE_SStructPCGSetup(solver, pdata->Du, pdata->bvec, pdata->xvec);
 
   /* solve the linear system */
-  /*   if (printl) printf("      calling SysPFMG solver \n"); */
-  HYPRE_SStructSysPFMGSolve(solver, pdata->Du, bvec, xvec);
+  HYPRE_SStructPCGSolve(solver, pdata->Du, pdata->bvec, pdata->xvec);
 
   /* extract solver statistics */
-  /*   if (printl) printf("      extracting SysPFMG statistics \n"); */
-  HYPRE_SStructSysPFMGGetFinalRelativeResidualNorm(solver, &finalresid);
-  HYPRE_SStructSysPFMGGetNumIterations(solver, &its);
-  pdata->totIters += its;
-/*   if (printl) printf("      delta = %g, finalresid = %g, MG iters = %i \n", */
-/* 		     delta, finalresid, its); */
+  finalresid = 1.0;  Sits = 0;  Pits = 0;
+  HYPRE_SStructPCGGetFinalRelativeResidualNorm(solver, &finalresid);
+  HYPRE_SStructPCGGetNumIterations(solver, &Sits);
+  HYPRE_SStructSysPFMGGetNumIterations(preconditioner, &Pits);
+  pdata->totIters += Sits;
+  if (printl) printf("      Du lin resid = %.1e (tol = %.1e) its = (%i,%i) \n",
+		     finalresid, delta, Sits, Pits);
+
+/*   if (printl) printf("Writing out solution to file u_sol.vec\n"); */
+/*   HYPRE_SStructVectorPrint("u_sol.vec", pdata->xvec, 0); */
 
   /* gather the solution vector and extract values */
-  /*   if (printl) printf("      extracting solution vector \n"); */
-  HYPRE_SStructVectorGather(xvec);
+  HYPRE_SStructVectorGather(pdata->xvec);
   ilower[0] = pdata->iXL;  ilower[1] = pdata->iYL;
   iupper[0] = pdata->iXR;  iupper[1] = pdata->iYR;
   for (iv=1; iv<3; iv++) {
-    HYPRE_SStructVectorGetBoxValues(xvec, 0, ilower, iupper, iv-1, tmp);
+    HYPRE_SStructVectorGetBoxValues(pdata->xvec, 0, ilower, iupper, iv-1, tmp);
     Vbl = iv * (Nx+2*NGx) * (Ny+2*NGy);
     idx = 0;
     for (iy=NGy; iy<Ny+NGy; iy++) {
@@ -1154,7 +1213,7 @@ int VPrecDuSolve(double *xx, double *bb, double *tmp, double delta, void *P_data
   }
 #ifdef TWO_HALF_D
   iv = 3;
-  HYPRE_SStructVectorGetBoxValues(xvec, 0, ilower, iupper, iv-1, tmp);
+  HYPRE_SStructVectorGetBoxValues(pdata->xvec, 0, ilower, iupper, iv-1, tmp);
   Vbl = iv * (Nx+2*NGx) * (Ny+2*NGy);
   idx = 0;
   for (iy=NGy; iy<Ny+NGy; iy++) {
@@ -1164,11 +1223,14 @@ int VPrecDuSolve(double *xx, double *bb, double *tmp, double delta, void *P_data
   }
 #endif
 
-  /* destroy vector and solver structures */
-  HYPRE_SStructSysPFMGDestroy(solver);
-  HYPRE_SStructVectorDestroy(bvec);
-  HYPRE_SStructVectorDestroy(xvec);
+  /* destroy solver & preconditioner structures */
+  HYPRE_SStructPCGDestroy(solver);
+  HYPRE_SStructSysPFMGDestroy(preconditioner);
       
+  /* stop timer, add to totals, and output to screen */ 
+  Tstop = MPI_Wtime();
+  pdata->Tsolve += Tstop - Tstart;
+
   /* return success */
   return(0);
 }
@@ -1204,7 +1266,6 @@ int VPrecDuMultiply(double *xx, double *bb, double *tmp, void *P_data)
   int ilower[2], iupper[2];
   long int ix, iy, iv, idx, Nx, NGx, Ny, NGy;
   long int Vbl, Ybl;
-  HYPRE_SStructVector bvec, xvec;
   double val;
 
   /* check that Du matrix initialized */
@@ -1219,18 +1280,6 @@ int VPrecDuMultiply(double *xx, double *bb, double *tmp, void *P_data)
   Ny  = pdata->Ny;
   NGy = pdata->NGy;
 
-  /* create the SStruct vectors and set init flags to 1 */
-  HYPRE_SStructVectorCreate(pdata->comm, pdata->grid, &bvec);
-  HYPRE_SStructVectorCreate(pdata->comm, pdata->grid, &xvec);
-
-  /* set vector storage type */
-  HYPRE_SStructVectorSetObjectType(bvec, pdata->mattype);
-  HYPRE_SStructVectorSetObjectType(xvec, pdata->mattype);
-    
-  /* initialize vectors */
-  HYPRE_SStructVectorInitialize(bvec);
-  HYPRE_SStructVectorInitialize(xvec);
-  
   /* convert product, result vectors to HYPRE format        */
   /*    insert product vector entries into HYPRE vector x   */
   ilower[0] = pdata->iXL;  ilower[1] = pdata->iYL;
@@ -1243,7 +1292,7 @@ int VPrecDuMultiply(double *xx, double *bb, double *tmp, void *P_data)
       for (ix=NGx; ix<Nx+NGx; ix++)
 	tmp[idx++] = xx[Vbl+Ybl+ix];
     }
-    HYPRE_SStructVectorSetBoxValues(xvec, 0, ilower, iupper, iv-1, tmp);
+    HYPRE_SStructVectorSetBoxValues(pdata->xvec, 0, ilower, iupper, iv-1, tmp);
   }
 #ifdef TWO_HALF_D
   iv = 3;
@@ -1254,24 +1303,24 @@ int VPrecDuMultiply(double *xx, double *bb, double *tmp, void *P_data)
     for (ix=NGx; ix<Nx+NGx; ix++)
       tmp[idx++] = xx[Vbl+Ybl+ix];
   }
-  HYPRE_SStructVectorSetBoxValues(xvec, 0, ilower, iupper, iv-1, tmp);
+  HYPRE_SStructVectorSetBoxValues(pdata->xvec, 0, ilower, iupper, iv-1, tmp);
 #endif
 
   /*    assemble vectors */
-  HYPRE_SStructVectorAssemble(xvec);
-  HYPRE_SStructVectorAssemble(bvec);
+  HYPRE_SStructVectorAssemble(pdata->xvec);
+  HYPRE_SStructVectorAssemble(pdata->bvec);
 
   /* computing the matvec */
-  hypre_SStructMatvec(1.0, pdata->Du, xvec, 1.0, bvec);
+  HYPRE_SStructMatrixMatvec(1.0, pdata->Du, pdata->xvec, 1.0, pdata->bvec);
 
   /* gather the solution vector before extracting values */
-  HYPRE_SStructVectorGather(bvec);
+  HYPRE_SStructVectorGather(pdata->bvec);
 
   /* extract solution vector into bb */
   ilower[0] = pdata->iXL;  ilower[1] = pdata->iYL;
   iupper[0] = pdata->iXR;  iupper[1] = pdata->iYR;
   for (iv=1; iv<3; iv++) {
-    HYPRE_SStructVectorGetBoxValues(bvec, 0, ilower, iupper, iv-1, tmp);
+    HYPRE_SStructVectorGetBoxValues(pdata->bvec, 0, ilower, iupper, iv-1, tmp);
     Vbl = iv * (Nx+2*NGx) * (Ny+2*NGy);
     idx = 0;
     for (iy=NGy; iy<Ny+NGy; iy++) {
@@ -1282,7 +1331,7 @@ int VPrecDuMultiply(double *xx, double *bb, double *tmp, void *P_data)
   }
 #ifdef TWO_HALF_D
   iv = 3;
-  HYPRE_SStructVectorGetBoxValues(bvec, 0, ilower, iupper, iv-1, tmp);
+  HYPRE_SStructVectorGetBoxValues(pdata->bvec, 0, ilower, iupper, iv-1, tmp);
   Vbl = iv * (Nx+2*NGx) * (Ny+2*NGy);
   idx = 0;
   for (iy=NGy; iy<Ny+NGy; iy++) {
@@ -1292,10 +1341,6 @@ int VPrecDuMultiply(double *xx, double *bb, double *tmp, void *P_data)
   }
 #endif
 
-  /* destroy old vectors */
-  HYPRE_SStructVectorDestroy(bvec);
-  HYPRE_SStructVectorDestroy(xvec);
-      
   /* return success.  */
   return(0);
 }

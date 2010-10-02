@@ -204,6 +204,8 @@ void *VPrecDbAlloc(long int Nx, long int Ny, double dx, double dy,
   
   /*    set the general domain information */
   pdata->totIters = 0;
+  pdata->Tsetup = 0.0;
+  pdata->Tsolve = 0.0;
   
   /*    set up the grid */
   /*       create grid object */
@@ -248,16 +250,15 @@ void *VPrecDbAlloc(long int Nx, long int Ny, double dx, double dy,
   /*       assemble the grid */
   HYPRE_SStructGridAssemble(pdata->grid);
   
+
   /*    set up the stencils */
-  pdata->bStSize = 5;
-  
   /*       create bx stencil */
-  HYPRE_SStructStencilCreate(pdata->ndim, pdata->bStSize, &(pdata->bxStencil));
+  HYPRE_SStructStencilCreate(pdata->ndim, 5, &(pdata->bxStencil));
   /*       create by stencil */
-  HYPRE_SStructStencilCreate(pdata->ndim, pdata->bStSize, &(pdata->byStencil));
+  HYPRE_SStructStencilCreate(pdata->ndim, 5, &(pdata->byStencil));
 #ifdef TWO_HALF_D
   /*       create bz stencil */
-  HYPRE_SStructStencilCreate(pdata->ndim, pdata->bStSize, &(pdata->bzStencil));
+  HYPRE_SStructStencilCreate(pdata->ndim, 5, &(pdata->bzStencil));
 #endif  
 
   /*       set stencil entries */
@@ -334,12 +335,25 @@ void *VPrecDbAlloc(long int Nx, long int Ny, double dx, double dy,
   
   /*       assemble the graph */
   HYPRE_SStructGraphAssemble(pdata->graph);
-  
+
+  /*    set up the matrix */
+  HYPRE_SStructMatrixCreate(pdata->comm, pdata->graph, &(pdata->Db));
+  HYPRE_SStructMatrixSetObjectType(pdata->Db, pdata->mattype);
+  HYPRE_SStructMatrixInitialize(pdata->Db);
+
+  /*    set up the vectors */
+  HYPRE_SStructVectorCreate(pdata->comm, pdata->grid, &(pdata->bvec));
+  HYPRE_SStructVectorCreate(pdata->comm, pdata->grid, &(pdata->xvec));
+  HYPRE_SStructVectorSetObjectType(pdata->bvec, pdata->mattype);
+  HYPRE_SStructVectorSetObjectType(pdata->xvec, pdata->mattype);
+  HYPRE_SStructVectorInitialize(pdata->bvec);
+  HYPRE_SStructVectorInitialize(pdata->xvec);
+
   
   /********************************/
   /*  continue with general setup */
   
-  /*    set Db, b and x init flags to 0 at first */
+  /* set init flags to 0 at first */
   pdata->DbInit = 0;
   
   /* set Solver default options into pdata */
@@ -371,6 +385,12 @@ void VPrecDbFree(void *P_data)
     /* cast P_data as the correct structure */
     ViscPrecDbData pdata;
     pdata = (ViscPrecDbData) P_data;
+
+    /* HYPRE matrix and vectors */
+    HYPRE_SStructMatrixDestroy(pdata->Db);
+    HYPRE_SStructVectorDestroy(pdata->bvec);
+    HYPRE_SStructVectorDestroy(pdata->xvec);
+      
     
     /* finally, free the pdata structure */
     free(pdata);
@@ -408,35 +428,15 @@ int VPrecDbSetup(double *uu, double gamdt, double Lu,
   long int Nx, Ny, ix, iy, idx;
   int ilower[2], iupper[2], entries[5], IdLoc;
   int xLface, xRface, yLface, yRface;
-  double dx, dy, etadxi2, etadyi2, etadxsqsum, etafact;
+  double dx, dy, etadxi2, etadyi2, etadxsqsum, etafact, Tstart, Tstop;
   double bvalues[5], IdVal;
   
+  /* start timer */
+  Tstart = MPI_Wtime();
+
   /* recast P_data as the correct structure */
   ViscPrecDbData pdata;
   pdata = (ViscPrecDbData) P_data;
-  
-  /* destroy old matrix if necessary */
-  if (pdata->DbInit == 1) {
-    HYPRE_SStructMatrixDestroy(pdata->Db);
-    pdata->DbInit = 0;
-  }
-  
-  /* create the SStruct matrix, and set init flag */
-  HYPRE_SStructMatrixCreate(pdata->comm, pdata->graph, &(pdata->Db));
-  pdata->DbInit = 1;
-  
-  /* set matrix storage type */
-  HYPRE_SStructMatrixSetObjectType(pdata->Db, pdata->mattype);
-  
-/*   /\* set matrix symmetry *\/ */
-/*   HYPRE_SStructMatrixSetSymmetric(pdata->Db, 0, 0, 0, 1); */
-/*   HYPRE_SStructMatrixSetSymmetric(pdata->Db, 0, 1, 1, 1); */
-/* #ifdef TWO_HALF_D */
-/*   HYPRE_SStructMatrixSetSymmetric(pdata->Db, 0, 2, 2, 1); */
-/* #endif */
-
-  /* initialize matrix */
-  HYPRE_SStructMatrixInitialize(pdata->Db);
   
   /* get grid information shortcuts */
   Nx  = pdata->Nx;
@@ -701,11 +701,21 @@ int VPrecDbSetup(double *uu, double gamdt, double Lu,
   /* assemble matrix */
   HYPRE_SStructMatrixAssemble(pdata->Db);
   
+  /*       set init flag */
+  pdata->DbInit = 1;
+
 /*   /\* output matrix to file *\/ */
 /*   if ((pdata->outproc)==1) */
 /*     {printf("      printing HYPRE Db matrix to file \n");} */
-/*   char *fname = "Db_precmat"; */
-/*   HYPRE_SStructMatrixPrint(fname, pdata->Db, 0); */
+/*   HYPRE_SStructMatrixPrint("Db.mat", pdata->Db, 0); */
+
+  /* stop timer, add to totals, and output to screen */ 
+  Tstop = MPI_Wtime();
+  pdata->Tsetup += Tstop - Tstart;
+  if ((pdata->outproc) == 1) {
+    printf("Db cumulative setup time: %g\n",pdata->Tsetup);
+    printf("Db cumulative solve time: %g\n",pdata->Tsolve);
+  }
 
   /* return success */ 
   return(0);
@@ -741,15 +751,18 @@ int VPrecDbSolve(double *xx, double *bb, double *tmp, double delta, void *P_data
   pdata = (ViscPrecDbData) P_data;
 
   /* local variables */
-  int its, ilower[2], iupper[2];
+  int Sits, Pits, ilower[2], iupper[2];
   long int ix, iy, iv, idx, Nx, NGx, Ny, NGy;
   long int Vbl, Ybl;
-  double finalresid, resid, val, bnorm;
-  HYPRE_SStructVector bvec, xvec;
+  double finalresid, resid, val, bnorm, Tstart, Tstop;
   HYPRE_SStructSolver solver;
+  HYPRE_SStructSolver preconditioner;
   int printl = ((pdata->outproc)==1) ? pdata->sol_printl : 0;
 
 /*   if (printl) printf("     solving Db preconditioner system\n"); */
+
+  /* start timer */
+  Tstart = MPI_Wtime();
 
   /* check that Db matrix initialized */
   if (pdata->DbInit == 0) {
@@ -763,18 +776,6 @@ int VPrecDbSolve(double *xx, double *bb, double *tmp, double delta, void *P_data
   Ny  = pdata->Ny;
   NGy = pdata->NGy;
 
-  /* create the SStruct vectors and set init flags to 1 */
-  HYPRE_SStructVectorCreate(pdata->comm, pdata->grid, &bvec);
-  HYPRE_SStructVectorCreate(pdata->comm, pdata->grid, &xvec);
-
-  /* set vector storage type */
-  HYPRE_SStructVectorSetObjectType(bvec, pdata->mattype);
-  HYPRE_SStructVectorSetObjectType(xvec, pdata->mattype);
-    
-  /* initialize vectors */
-  HYPRE_SStructVectorInitialize(bvec);
-  HYPRE_SStructVectorInitialize(xvec);
-  
   /* convert rhs, solution vectors to HYPRE format:                 */
   /*    insert rhs vector entries into HYPRE vectors bvec and xvec. */
   ilower[0] = pdata->iXL;  ilower[1] = pdata->iYL;
@@ -787,8 +788,9 @@ int VPrecDbSolve(double *xx, double *bb, double *tmp, double delta, void *P_data
       for (ix=NGx; ix<Nx+NGx; ix++)
 	tmp[idx++] = bb[Vbl+Ybl+ix];
     }
-    HYPRE_SStructVectorSetBoxValues(bvec, 0, ilower, iupper, iv-4, tmp);
-    HYPRE_SStructVectorSetBoxValues(xvec, 0, ilower, iupper, iv-4, tmp);
+    HYPRE_SStructVectorSetBoxValues(pdata->bvec, 0, ilower, iupper, iv-4, tmp);
+    for (idx=0; idx<Nx*Ny; idx++)  tmp[idx] = 0.0;
+    HYPRE_SStructVectorSetBoxValues(pdata->xvec, 0, ilower, iupper, iv-4, tmp);
   }
 #ifdef TWO_HALF_D
   iv = 6;
@@ -799,54 +801,60 @@ int VPrecDbSolve(double *xx, double *bb, double *tmp, double delta, void *P_data
     for (ix=NGx; ix<Nx+NGx; ix++)
       tmp[idx++] = bb[Vbl+Ybl+ix];
   }
-  HYPRE_SStructVectorSetBoxValues(bvec, 0, ilower, iupper, iv-4, tmp);
-  HYPRE_SStructVectorSetBoxValues(xvec, 0, ilower, iupper, iv-4, tmp);
+  HYPRE_SStructVectorSetBoxValues(pdata->bvec, 0, ilower, iupper, iv-4, tmp);
+  for (idx=0; idx<Nx*Ny; idx++)  tmp[idx] = 0.0;
+  HYPRE_SStructVectorSetBoxValues(pdata->xvec, 0, ilower, iupper, iv-4, tmp);
 #endif
 
   /*    assemble vectors */
-  HYPRE_SStructVectorAssemble(xvec);
-  HYPRE_SStructVectorAssemble(bvec);
+  HYPRE_SStructVectorAssemble(pdata->xvec);
+  HYPRE_SStructVectorAssemble(pdata->bvec);
 
-  /* set up the solver [SysPFMG for now] */
-  /*    create the solver */
-/*   if (printl) printf("      creating SysPFMG solver \n"); */
-  HYPRE_SStructSysPFMGCreate(pdata->comm, &solver);
+/*   if (printl) printf("Writing out rhs to file b_rhs.vec\n"); */
+/*   HYPRE_SStructVectorPrint("b_rhs.vec", pdata->bvec, 0); */
+
+  /* set up the solver [PCG/SysPFMG] */
+  HYPRE_SStructPCGCreate(pdata->comm, &solver);
+  HYPRE_SStructSysPFMGCreate(pdata->comm, &preconditioner);
  
-  /*    set solver options */
-  /*    [could the first 8 of these be done in the PrecAlloc routine?] */
-/*   if (printl) printf("      setting SysPFMG options \n"); */
-  HYPRE_SStructSysPFMGSetMaxIter(solver, pdata->sol_maxit);
-  HYPRE_SStructSysPFMGSetRelChange(solver, pdata->sol_relch);
-  HYPRE_SStructSysPFMGSetRelaxType(solver, pdata->sol_rlxtype);
-  HYPRE_SStructSysPFMGSetNumPreRelax(solver, pdata->sol_npre);
-  HYPRE_SStructSysPFMGSetNumPostRelax(solver, pdata->sol_npost);
-  HYPRE_SStructSysPFMGSetPrintLevel(solver, pdata->sol_printl);
-  HYPRE_SStructSysPFMGSetLogging(solver, pdata->sol_log);
-  if (delta != 0.0)  HYPRE_SStructSysPFMGSetTol(solver, delta);
-  if (pdata->sol_zeroguess) 
-    HYPRE_SStructSysPFMGSetZeroGuess(solver);
-/*   if (printl) printf("      calling SysPFMG setup \n"); */
-  HYPRE_SStructSysPFMGSetup(solver, pdata->Db, bvec, xvec);
+  /*    set preconditioner & solver options */
+  HYPRE_SStructSysPFMGSetMaxIter(preconditioner, pdata->sol_maxit/4);
+  HYPRE_SStructSysPFMGSetRelChange(preconditioner, pdata->sol_relch);
+  HYPRE_SStructSysPFMGSetRelaxType(preconditioner, pdata->sol_rlxtype);
+  HYPRE_SStructSysPFMGSetNumPreRelax(preconditioner, pdata->sol_npre);
+  HYPRE_SStructSysPFMGSetNumPostRelax(preconditioner, pdata->sol_npost);
+  HYPRE_SStructPCGSetPrintLevel(solver, pdata->sol_printl);
+  HYPRE_SStructPCGSetLogging(solver, pdata->sol_log);
+  HYPRE_SStructPCGSetRelChange(solver, pdata->sol_relch);
+  HYPRE_SStructPCGSetMaxIter(solver, pdata->sol_maxit);
+  if (delta != 0.0)  HYPRE_SStructPCGSetTol(solver, delta);
+  HYPRE_SStructPCGSetPrecond(solver, 
+			     (HYPRE_PtrToSStructSolverFcn) HYPRE_SStructSysPFMGSolve,  
+			     (HYPRE_PtrToSStructSolverFcn) HYPRE_SStructSysPFMGSetup, 
+			     preconditioner);
+  HYPRE_SStructPCGSetup(solver, pdata->Db, pdata->bvec, pdata->xvec);
 
   /* solve the linear system */
-/*   if (printl) printf("      calling SysPFMG solver \n"); */
-  HYPRE_SStructSysPFMGSolve(solver, pdata->Db, bvec, xvec);
+  HYPRE_SStructPCGSolve(solver, pdata->Db, pdata->bvec, pdata->xvec);
 
   /* extract solver statistics */
-/*   if (printl) printf("      extracting SysPFMG statistics \n"); */
-  HYPRE_SStructSysPFMGGetFinalRelativeResidualNorm(solver,&finalresid);
-  HYPRE_SStructSysPFMGGetNumIterations(solver, &its);
-  pdata->totIters += its;
-/*   if (printl) printf("      delta = %g, finalresid = %g, MG iters = %i \n", */
-/* 		     delta, finalresid, its); */
+  finalresid = 1.0;  Sits = 0;  Pits = 0;
+  HYPRE_SStructPCGGetFinalRelativeResidualNorm(solver, &finalresid);
+  HYPRE_SStructPCGGetNumIterations(solver, &Sits);
+  HYPRE_SStructSysPFMGGetNumIterations(preconditioner, &Pits);
+  pdata->totIters += Sits;
+  if (printl) printf("      Db lin resid = %.1e (tol = %.1e) its = (%i,%i) \n",
+		     finalresid, delta, Sits, Pits);
+
+/*   if (printl) printf("Writing out solution to file b_sol.vec\n"); */
+/*   HYPRE_SStructVectorPrint("b_sol.vec", pdata->xvec, 0); */
 
   /* gather the solution vector and extract values */
-/*   if (printl) printf("      extracting solution vector \n"); */
-  HYPRE_SStructVectorGather(xvec);
+  HYPRE_SStructVectorGather(pdata->xvec);
   ilower[0] = pdata->iXL;  ilower[1] = pdata->iYL;
   iupper[0] = pdata->iXR;  iupper[1] = pdata->iYR;
   for (iv=4; iv<6; iv++) {
-    HYPRE_SStructVectorGetBoxValues(xvec, 0, ilower, iupper, iv-4, tmp);
+    HYPRE_SStructVectorGetBoxValues(pdata->xvec, 0, ilower, iupper, iv-4, tmp);
     Vbl = iv * (Nx+2*NGx) * (Ny+2*NGy);
     idx = 0;
     for (iy=NGy; iy<Ny+NGy; iy++) {
@@ -857,7 +865,7 @@ int VPrecDbSolve(double *xx, double *bb, double *tmp, double delta, void *P_data
   }
 #ifdef TWO_HALF_D
   iv = 6;
-  HYPRE_SStructVectorGetBoxValues(xvec, 0, ilower, iupper, iv-4, tmp);
+  HYPRE_SStructVectorGetBoxValues(pdata->xvec, 0, ilower, iupper, iv-4, tmp);
   Vbl = iv * (Nx+2*NGx) * (Ny+2*NGy);
   idx = 0;
   for (iy=NGy; iy<Ny+NGy; iy++) {
@@ -867,10 +875,13 @@ int VPrecDbSolve(double *xx, double *bb, double *tmp, double delta, void *P_data
   }
 #endif
 
-  /* destroy vector and solver structures */
-  HYPRE_SStructSysPFMGDestroy(solver);
-  HYPRE_SStructVectorDestroy(bvec);
-  HYPRE_SStructVectorDestroy(xvec);
+  /* destroy solver & preconditioner structures */
+  HYPRE_SStructPCGDestroy(solver);
+  HYPRE_SStructSysPFMGDestroy(preconditioner);
+
+  /* stop timer, add to totals, and output to screen */ 
+  Tstop = MPI_Wtime();
+  pdata->Tsolve += Tstop - Tstart;
 
   /* return success.  */
   return(0);
@@ -907,7 +918,6 @@ int VPrecDbMultiply(double *xx, double *bb, double *tmp, void *P_data)
   int ilower[2], iupper[2];
   long int ix, iy, iv, idx, Nx, NGx, Ny, NGy;
   long int Vbl, Ybl;
-  HYPRE_SStructVector bvec, xvec;
   double val;
 
   /* check that Db matrix initialized */
@@ -922,18 +932,6 @@ int VPrecDbMultiply(double *xx, double *bb, double *tmp, void *P_data)
   Ny  = pdata->Ny;
   NGy = pdata->NGy;
 
-  /* create the SStruct vectors and set init flags to 1 */
-  HYPRE_SStructVectorCreate(pdata->comm, pdata->grid, &bvec);
-  HYPRE_SStructVectorCreate(pdata->comm, pdata->grid, &xvec);
-
-  /* set vector storage type */
-  HYPRE_SStructVectorSetObjectType(bvec, pdata->mattype);
-  HYPRE_SStructVectorSetObjectType(xvec, pdata->mattype);
-    
-  /* initialize vectors */
-  HYPRE_SStructVectorInitialize(bvec);
-  HYPRE_SStructVectorInitialize(xvec);
-  
   /* convert product, result vectors to HYPRE format        */
   /*    insert product vector entries into HYPRE vector x   */
   ilower[0] = pdata->iXL;  ilower[1] = pdata->iYL;
@@ -946,7 +944,7 @@ int VPrecDbMultiply(double *xx, double *bb, double *tmp, void *P_data)
       for (ix=NGx; ix<Nx+NGx; ix++)
 	tmp[idx++] = xx[Vbl+Ybl+ix];
     }
-    HYPRE_SStructVectorSetBoxValues(xvec, 0, ilower, iupper, iv-4, tmp);
+    HYPRE_SStructVectorSetBoxValues(pdata->xvec, 0, ilower, iupper, iv-4, tmp);
   }
 #ifdef TWO_HALF_D 
   iv = 6;
@@ -957,25 +955,25 @@ int VPrecDbMultiply(double *xx, double *bb, double *tmp, void *P_data)
     for (ix=NGx; ix<Nx+NGx; ix++)
       tmp[idx++] = xx[Vbl+Ybl+ix];
   }
-  HYPRE_SStructVectorSetBoxValues(xvec, 0, ilower, iupper, iv-4, tmp);
+  HYPRE_SStructVectorSetBoxValues(pdata->xvec, 0, ilower, iupper, iv-4, tmp);
 #endif
 
   /*    assemble vectors */
-  HYPRE_SStructVectorAssemble(xvec);
-  HYPRE_SStructVectorAssemble(bvec);
+  HYPRE_SStructVectorAssemble(pdata->xvec);
+  HYPRE_SStructVectorAssemble(pdata->bvec);
 
   /* computing the matvec */
-  hypre_SStructMatvec(1.0, pdata->Db, xvec, 1.0, bvec);
+  HYPRE_SStructMatrixMatvec(1.0, pdata->Db, pdata->xvec, 1.0, pdata->bvec);
 
   /* gather the solution vector before extracting values */
-  HYPRE_SStructVectorGather(bvec);
+  HYPRE_SStructVectorGather(pdata->bvec);
 
   /* extract solution vector into bb */
   ilower[0] = pdata->iXL;  ilower[1] = pdata->iYL;
   iupper[0] = pdata->iXR;  iupper[1] = pdata->iYR;
   for (iv=4; iv<6; iv++) {
     Vbl = iv * (Nx+2*NGx) * (Ny+2*NGy);
-    HYPRE_SStructVectorGetBoxValues(bvec, 0, ilower, iupper, iv-4, tmp);
+    HYPRE_SStructVectorGetBoxValues(pdata->bvec, 0, ilower, iupper, iv-4, tmp);
     idx = 0;
     for (iy=NGy; iy<Ny+NGy; iy++) {
       Ybl = iy * (Nx+2*NGx);
@@ -986,7 +984,7 @@ int VPrecDbMultiply(double *xx, double *bb, double *tmp, void *P_data)
 #ifdef TWO_HALF_D
   iv = 6;
   Vbl = iv * (Nx+2*NGx) * (Ny+2*NGy);
-  HYPRE_SStructVectorGetBoxValues(bvec, 0, ilower, iupper, iv-4, tmp);
+  HYPRE_SStructVectorGetBoxValues(pdata->bvec, 0, ilower, iupper, iv-4, tmp);
   idx = 0;
   for (iy=NGy; iy<Ny+NGy; iy++) {
     Ybl = iy * (Nx+2*NGx);
@@ -995,10 +993,6 @@ int VPrecDbMultiply(double *xx, double *bb, double *tmp, void *P_data)
   }
 #endif
 
-  /* destroy old vectors */
-  HYPRE_SStructVectorDestroy(bvec);
-  HYPRE_SStructVectorDestroy(xvec);
-      
   /* return success.  */
   return(0);
 }
