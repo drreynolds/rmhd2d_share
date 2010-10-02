@@ -180,46 +180,48 @@ c     Rayleigh-Taylor sources due to gravity (Froude=1e4)
 c
 
 
-c     root node outputs residual information
-c        ||f||
-      call fnvmhdmaxnorm(fval,fIn)
-c        ||rho||
-      call fnvmhdmaxnormvar(fval,1,rhoIn)
-      maxrho = maxloc(fval(1:nxlocal,1:nylocal,1:nzlocal,1))
-c        ||ux||
-      call fnvmhdmaxnormvar(fval,2,uxIn)
-      maxux = maxloc(fval(1:nxlocal,1:nylocal,1:nzlocal,2))
-c        ||uy||
-      call fnvmhdmaxnormvar(fval,3,uyIn)
-      maxuy = maxloc(fval(1:nxlocal,1:nylocal,1:nzlocal,3))
-c        ||uz||
-      call fnvmhdmaxnormvar(fval,4,uzIn)
-      maxuz = maxloc(fval(1:nxlocal,1:nylocal,1:nzlocal,4))
-c        ||bx||
-      call fnvmhdmaxnormvar(fval,5,bxIn)
-      maxbx = maxloc(fval(1:nxlocal,1:nylocal,1:nzlocal,5))
-c        ||by||
-      call fnvmhdmaxnormvar(fval,6,byIn)
-      maxby = maxloc(fval(1:nxlocal,1:nylocal,1:nzlocal,6))
-c        ||bz||
-      call fnvmhdmaxnormvar(fval,7,bzIn)
-      maxbz = maxloc(fval(1:nxlocal,1:nylocal,1:nzlocal,7))
-c        ||e||
-      call fnvmhdmaxnormvar(fval,8,eIn)
-      maxe = maxloc(fval(1:nxlocal,1:nylocal,1:nzlocal,8))
-      if (iprocx==1 .and. iprocy==1 .and. iprocz==1) then
-         write(6,'(A,es11.4)') '  max|f(u)|  =',fIn
-         write(6,'(A)')        '  -----------------------------'
-       write(6,'(A,es11.4,A,3(i4))') '  max|f_rho| =',rhoIn,' at',maxrho
-         write(6,'(A,es11.4,A,3(i4))') '  max|f_ux|  =',uxIn,' at',maxux
-         write(6,'(A,es11.4,A,3(i4))') '  max|f_uy|  =',uyIn,' at',maxuy
-         write(6,'(A,es11.4,A,3(i4))') '  max|f_uz|  =',uzIn,' at',maxuz
-         write(6,'(A,es11.4,A,3(i4))') '  max|f_Bx|  =',bxIn,' at',maxbx
-         write(6,'(A,es11.4,A,3(i4))') '  max|f_By|  =',byIn,' at',maxby
-         write(6,'(A,es11.4,A,3(i4))') '  max|f_Bz|  =',bzIn,' at',maxbz
-         write(6,'(A,es11.4,A,3(i4))') '  max|f_e|   =',eIn,' at',maxe
-         write(6,'(A)')        '  -----------------------------'
-      end if
+c$$$c     root node outputs residual information
+c$$$c        ||f||
+c$$$      call fnvmhdmaxnorm(fval,fIn)
+c$$$c        ||rho||
+c$$$      call fnvmhdmaxnormvar(fval,1,rhoIn)
+c$$$      maxrho = maxloc(fval(1:nxlocal,1:nylocal,1:nzlocal,1))
+c$$$c        ||ux||
+c$$$      call fnvmhdmaxnormvar(fval,2,uxIn)
+c$$$      maxux = maxloc(fval(1:nxlocal,1:nylocal,1:nzlocal,2))
+c$$$c        ||uy||
+c$$$      call fnvmhdmaxnormvar(fval,3,uyIn)
+c$$$      maxuy = maxloc(fval(1:nxlocal,1:nylocal,1:nzlocal,3))
+c$$$c        ||uz||
+c$$$      call fnvmhdmaxnormvar(fval,4,uzIn)
+c$$$      maxuz = maxloc(fval(1:nxlocal,1:nylocal,1:nzlocal,4))
+c$$$c        ||bx||
+c$$$      call fnvmhdmaxnormvar(fval,5,bxIn)
+c$$$      maxbx = maxloc(fval(1:nxlocal,1:nylocal,1:nzlocal,5))
+c$$$c        ||by||
+c$$$      call fnvmhdmaxnormvar(fval,6,byIn)
+c$$$      maxby = maxloc(fval(1:nxlocal,1:nylocal,1:nzlocal,6))
+c$$$c        ||bz||
+c$$$      call fnvmhdmaxnormvar(fval,7,bzIn)
+c$$$      maxbz = maxloc(fval(1:nxlocal,1:nylocal,1:nzlocal,7))
+c$$$c        ||e||
+c$$$      call fnvmhdmaxnormvar(fval,8,eIn)
+c$$$      maxe = maxloc(fval(1:nxlocal,1:nylocal,1:nzlocal,8))
+c$$$      if (iprocx==1 .and. iprocy==1 .and. iprocz==1) then
+c$$$         write(6,'(A,es11.4)') '  max|f(u)|  =',fIn
+c$$$         write(6,'(A)') 
+c$$$     &        '  -------------------------------------------------'
+c$$$       write(6,'(A,es11.4,A,3(i4))') '  max|f_rho| =',rhoIn,' at',maxrho
+c$$$         write(6,'(A,es11.4,A,3(i4))') '  max|f_ux|  =',uxIn,' at',maxux
+c$$$         write(6,'(A,es11.4,A,3(i4))') '  max|f_uy|  =',uyIn,' at',maxuy
+c$$$         write(6,'(A,es11.4,A,3(i4))') '  max|f_uz|  =',uzIn,' at',maxuz
+c$$$         write(6,'(A,es11.4,A,3(i4))') '  max|f_Bx|  =',bxIn,' at',maxbx
+c$$$         write(6,'(A,es11.4,A,3(i4))') '  max|f_By|  =',byIn,' at',maxby
+c$$$         write(6,'(A,es11.4,A,3(i4))') '  max|f_Bz|  =',bzIn,' at',maxbz
+c$$$         write(6,'(A,es11.4,A,3(i4))') '  max|f_e|   =',eIn,' at',maxe
+c$$$         write(6,'(A)') 
+c$$$     &        '  -------------------------------------------------'
+c$$$      end if
 
 
 
