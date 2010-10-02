@@ -97,6 +97,52 @@ c     put the viscous flux divergence of uu into fu
 c     no need to update ww_rho, since that is multiplied by I
 
 
+c     update ww_u with contributions from rho component:
+c     ww_u = ww_u - L_{u,rho}*ww_rho
+c     [this update is accomplished via finite-differencing the 
+c     viscous divflux terms with an appropriate perturbation, 
+c     and using the resulting momentum difference value]
+      if (debug) then
+         if (iprocx==1 .and. iprocy==1 .and. iprocz==1) 
+     &        write(6,*) '\n  vprec_solver: updating ww_u'
+      endif
+
+c        set sigma, the differencing parameter 
+      call fnvmhddotprod(uu,ww,utw)
+      call fnvmhddotprod(ww,ww,wtw)
+      call fnvmhdl1norm(ww,wnorm)
+      utw = abs(utw)
+      sigma = sign(1.d-8,utw)*max(utw,wnorm)/wtw
+      if (wtw < 1.d-32)  sigma = 1.d-8
+
+c        set the perturbed state into vtmp
+      vtmp = uu
+      do k=izlo,izhi,1
+         do j=iylo,iyhi,1
+            do i=ixlo,ixhi,1
+               vtmp(i,j,k,1) = vtmp(i,j,k,1) + sigma*ww(i,j,k,1)
+            enddo
+         enddo
+      enddo
+
+c        get the viscous flux divergence at the perturbed state -> ftmp2
+      call CommState(vtmp)
+      call divFlux_viscous(vtmp,ftmp2)
+
+c        update ww_u with the F-D approximation to 
+c          -gamdt*(L_{u,who}*ww_rho)
+c        Note: L_{u,rho} = -d(divFlux_u)/d(rho)
+      do l=2,4,1
+         do k=izlo,izhi,1
+            do j=iylo,iyhi,1
+               do i=ixlo,ixhi,1
+                  ww(i,j,k,l) = ww(i,j,k,l) 
+     &                 + gamdt/sigma*(ftmp2(i,j,k,l)-fu(i,j,k,l))
+               enddo
+            enddo
+         enddo
+      enddo
+
 c     solve momentum system to update ww_u
       if (debug) then
          if (iprocx==1 .and. iprocy==1 .and. iprocz==1) 
@@ -108,13 +154,12 @@ c        check initial residual of Du system (rhs in ftmp1, sol in ftmp2)
          wwsave = ww
          ftmp1 = wwsave
          ftmp2 = ww
-c         call vprec_Du_mult(uu, gamdt, ftmp2, fu, ier)
          call vprec_Du_mult_hypre(uu, gamdt, ftmp2, vtmp, ier)
          vtmp = ftmp2-ftmp1
          dtmp = sqrt(sum(vtmp(1:nxlocal,1:nylocal,1:nzlocal,2:4)
-     &        *vtmp(1:nxlocal,1:nylocal,1:nzlocal,2:4)))/
-     &        sqrt(sum(ftmp1(1:nxlocal,1:nylocal,1:nzlocal,2:4)
-     &        *ftmp1(1:nxlocal,1:nylocal,1:nzlocal,2:4)))
+     &          *vtmp(1:nxlocal,1:nylocal,1:nzlocal,2:4)))
+     &          /sqrt(sum(ftmp1(1:nxlocal,1:nylocal,1:nzlocal,2:4)
+     &          *ftmp1(1:nxlocal,1:nylocal,1:nzlocal,2:4)))
          write(0,'(A,es15.8)') 
      &        '    vprec_solver: Du initial residual error =',dtmp
       endif
@@ -131,7 +176,6 @@ c        check linear residual of Du system (rhs in ftmp1, sol in ftmp2)
       if (debug) then
          ftmp1 = wwsave
          ftmp2 = ww
-c         call vprec_Du_mult(uu, gamdt, ftmp2, fu, ier)
          call vprec_Du_mult_hypre(uu, gamdt, ftmp2, vtmp, ier)
          vtmp = ftmp2-ftmp1
          dtmp = sqrt(sum(vtmp(1:nxlocal,1:nylocal,1:nzlocal,2:4)
@@ -154,7 +198,6 @@ c        check initial residual of Db system (rhs in ftmp1, sol in ftmp2)
       if (debug) then
          ftmp1 = wwsave
          ftmp2 = ww
-c         call vprec_Db_mult(uu, gamdt, ftmp2, fu, ier)
          call vprec_Db_mult_hypre(uu, gamdt, ftmp2, vtmp, ier)
          vtmp = ftmp2-ftmp1
          dtmp = sqrt(sum(vtmp(1:nxlocal,1:nylocal,1:nzlocal,5:7)
@@ -177,7 +220,6 @@ c        check linear residual of Db system (rhs in ftmp1, sol in ftmp2)
       if (debug) then
          ftmp1 = wwsave
          ftmp2 = ww
-c         call vprec_Db_mult(uu, gamdt, ftmp2, fu, ier)
          call vprec_Db_mult_hypre(uu, gamdt, ftmp2, vtmp, ier)
          vtmp = ftmp2-ftmp1
          dtmp = sqrt(sum(vtmp(1:nxlocal,1:nylocal,1:nzlocal,5:7)
@@ -204,8 +246,10 @@ c        set sigma, the differencing parameter
       call fnvmhddotprod(uu,ww,utw)
       call fnvmhddotprod(ww,ww,wtw)
       call fnvmhdl1norm(ww,wnorm)
+      utw = abs(utw)
       sigma = sign(1.d-8,utw)*max(utw,wnorm)/wtw
       if (wtw < 1.d-32)  sigma = 1.d-8
+      print *, 'vprec_solver: sigma =',sigma
 
 c        set the perturbed state into vtmp
       do l=1,7,1
