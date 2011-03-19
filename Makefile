@@ -55,21 +55,21 @@ SRC_LPK = dgemm dgemv dger dgetf2 dgetrf dgetrs dlaswp dscal \
           dswap dtrsm idamax ieeeck ilaenv xerbla lsame
 OBJ_LPK = $(addprefix source/Lapack/, $(addsuffix .o, $(SRC_LPK)))
 
-# preconditioning files (hyperbolic and diffusive, respectively)
-PRECSRCH = ptri_parallel fastwave_prec combo_prec
-PRECSRCD = viscous_prec-Du viscous_prec-Db viscous_prec-De \
-           vprec_solver vprec_mult combo_prec
+# preconditioning files
+PRECSRC = ptri_parallel fastwave_prec viscous_prec-Du \
+          viscous_prec-Db viscous_prec-De \
+          vprec_solver vprec_mult combo_prec
 
 # expRecon source files and corresp. object files
 SRC1 = $(ALLSRC) $(VISCSRC) $(EXPSRC) init2
 OBJ1 = $(addprefix source/, $(addsuffix .o, $(SRC1)))
 
 # kinRecon source files and corresp object files
-SRC2 = $(ALLSRC) $(VISCSRC) $(PRECSRCH) $(PRECSRCD) $(KINSRC) init2
+SRC2 = $(ALLSRC) $(VISCSRC) $(PRECSRC) $(KINSRC) init2
 OBJ2 = $(addprefix source/, $(addsuffix .o, $(SRC2))) $(OBJ_LPK)
 
 # cvRecon source files and corresp object files
-SRC4 = $(ALLSRC) $(VISCSRC) $(PRECSRCH) $(PRECSRCD) $(CVSRC) init2
+SRC4 = $(ALLSRC) $(VISCSRC) $(PRECSRC) $(CVSRC) init2
 OBJ4 = $(addprefix source/, $(addsuffix .o, $(SRC4))) $(OBJ_LPK)
 
 # expLinWave source files and corresp. object files
@@ -77,11 +77,11 @@ SRC6 = $(ALLSRC) $(EXPSRC) initwave3
 OBJ6 = $(addprefix source/, $(addsuffix .o, $(SRC6)))
 
 # cvLinWave source files and corresp. object files
-SRC7 = $(ALLSRC) $(PRECSRCH) $(CVSRC) initwave3
+SRC7 = $(ALLSRC) $(PRECSRC) $(CVSRC) initwave3
 OBJ7 = $(addprefix source/, $(addsuffix .o, $(SRC7))) $(OBJ_LPK)
 
 # kinLinWave source files and corresp. object files
-SRC8 = $(ALLSRC) $(PRECSRCH) $(KINSRC) initwave3
+SRC8 = $(ALLSRC) $(PRECSRC) $(KINSRC) initwave3
 OBJ8 = $(addprefix source/, $(addsuffix .o, $(SRC8))) $(OBJ_LPK)
 
 
@@ -90,21 +90,21 @@ SRC9 = $(ALLSRC) $(VISCSRC) $(EXPSRC) initKH
 OBJ9 = $(addprefix source/, $(addsuffix .o, $(SRC9)))
 
 # cvKH source files and corresp. object files
-SRC10 = $(ALLSRC) $(VISCSRC) $(PRECSRCH) $(PRECSRCD) $(CVSRC) initKH
+SRC10 = $(ALLSRC) $(VISCSRC) $(PRECSRC) $(CVSRC) initKH
 OBJ10 = $(addprefix source/, $(addsuffix .o, $(SRC10))) $(OBJ_LPK)
 
 # kinKH source files and corresp. object files
-SRC11 = $(ALLSRC) $(VISCSRC) $(PRECSRCH) $(PRECSRCD) $(KINSRC) initKH 
+SRC11 = $(ALLSRC) $(VISCSRC) $(PRECSRC) $(KINSRC) initKH 
 OBJ11 = $(addprefix source/, $(addsuffix .o, $(SRC11))) $(OBJ_LPK)
 
 
 # kinTiltMode source files and corresp. object files
-SRC12 = $(ALLSRC) $(PRECSRCH) $(KINSRC) init_tiltmode bessel
+SRC12 = $(ALLSRC) $(PRECSRC) $(KINSRC) init_tiltmode bessel
 OBJ12 = $(addprefix source/, $(addsuffix .o, $(SRC12))) $(OBJ_LPK)
 
 
 # kinTearingMode source files and corresp. object files
-SRC13 = $(ALLSRC) $(VISCSRC) $(PRECSRCH) $(PRECSRCD) $(KINSRC) \
+SRC13 = $(ALLSRC) $(VISCSRC) $(PRECSRC) $(KINSRC) \
         init_tearingmode 
 OBJ13 = $(addprefix source/, $(addsuffix .o, $(SRC13))) $(OBJ_LPK)
 
@@ -114,11 +114,11 @@ SRC14 = $(ALLSRC) $(VISCSRC) $(EXPSRC) initRT
 OBJ14 = $(addprefix source/, $(addsuffix .o, $(SRC14)))
 
 # kinRT source files and corresp. object files
-SRC15 = $(ALLSRC) $(VISCSRC) $(PRECSRCH) $(PRECSRCD) $(KINSRC) initRT
+SRC15 = $(ALLSRC) $(VISCSRC) $(PRECSRC) $(KINSRC) initRT
 OBJ15 = $(addprefix source/, $(addsuffix .o, $(SRC15))) $(OBJ_LPK)
 
 # cvRT source files and corresp. object files
-SRC16 = $(ALLSRC) $(VISCSRC) $(PRECSRCH) $(PRECSRCD) $(CVSRC) initRT
+SRC16 = $(ALLSRC) $(VISCSRC) $(PRECSRC) $(CVSRC) initRT
 OBJ16 = $(addprefix source/, $(addsuffix .o, $(SRC16))) $(OBJ_LPK)
 
 
@@ -129,12 +129,12 @@ FNVEC_TEST_OBJ = $(addsuffix .o, $(FNVEC_TEST_SRC))
 
 
 # test_driver source files and corresp. object files
-TEST_DRIVER_SRC = $(ALLSRC) $(PRECSRCH) $(PRECSRCD) init2 test_driver \
+TEST_DRIVER_SRC = $(ALLSRC) $(PRECSRC) init2 test_driver \
                   impCVODE_interface nvector_mhd fnvector_mhd
 TEST_DRIVER_OBJ = $(addprefix source/, $(addsuffix .o, $(TEST_DRIVER_SRC))) $(OBJ_LPK)
 
 # comparison_driver source files and corresp. object files
-COMP_DRIVER_SRC = $(ALLSRC) $(PRECSRCH) $(PRECSRCD) init2   \
+COMP_DRIVER_SRC = $(ALLSRC) $(PRECSRC) init2   \
                   mhdsolveRKTVD2 impCVODE_interface         \
                   comparison_driver nvector_mhd fnvector_mhd
 COMP_DRIVER_OBJ = $(addprefix source/, $(addsuffix .o, $(COMP_DRIVER_SRC))) $(OBJ_LPK)
