@@ -2,7 +2,14 @@ Building and Running RMHD2D:
 
 1. Edit one of the machine-dependent Makefiles,
    e.g. Make.reynolds-linux, to set up the various compilers, compiler
-   flags, libraries, and Fortran-to-C translation directives.
+   flags, libraries, and Fortran-to-C translation directives.  
+   NOTE: we have tested this code using sundials versions 2.3.0 and
+   2.4.0; however, when installing sundials you must ensure that the
+   source code file
+      sundials-2.x.0/include/sundials/sundials_fnvector.h 
+   is copied to the installation directory.  Unfortunately, this is
+   not the default behavior when building/installing in a different
+   directory than where it is installed.
 
 2. Link this machine-dependent Makefile to Make.machine: e.g.
    ln -s Make.reynolds-linux Make.machine
