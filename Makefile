@@ -122,6 +122,20 @@ SRC16 = $(ALLSRC) $(VISCSRC) $(PRECSRC) $(CVSRC) initRT
 OBJ16 = $(addprefix source/, $(addsuffix .o, $(SRC16))) $(OBJ_LPK)
 
 
+# test_psol_scaling source files and corresp. object files
+PSOL_SCALING_TEST_SRC = $(addprefix source/, $(ALLSRC)) \
+                        source/init2 source/ptri_parallel \
+                        source/fastwave_prec tests/test_psol_scaling 
+PSOL_SCALING_TEST_OBJ = $(addsuffix .o, $(PSOL_SCALING_TEST_SRC)) $(OBJ_LPK)
+
+
+# test_psol_accuracy source files and corresp. object files
+PSOL_ACCURACY_TEST_SRC = $(addprefix source/, $(ALLSRC)) \
+                         source/init2 source/ptri_parallel \
+                         source/ptri_product tests/test_psol_accuracy
+PSOL_ACCURACY_TEST_OBJ = $(addsuffix .o, $(PSOL_ACCURACY_TEST_SRC)) $(OBJ_LPK)
+
+
 # fnvec_mhd_test source files and corresp. object files
 FNVEC_TEST_SRC = source/modules source/nvector_mhd source/fnvector_mhd \
                  tests/test_nvec_mhd tests/test_fnvec_mhd 
@@ -270,6 +284,13 @@ cvRT : ${HEADERS} ${OBJ16}
 
 cvRT2 : ${HEADERS} ${OBJ16N}
 	${F90} ${FFLAGS_} -o $@ ${OBJ16N} ${INCS} ${CVLIBS} 
+
+
+test_psol_scaling : ${HEADERS} ${PSOL_SCALING_TEST_OBJ}
+	${F90} ${FFLAGS_} -o $@ ${PSOL_SCALING_TEST_OBJ} ${INCS}
+
+test_psol_accuracy : ${HEADERS} ${PSOL_ACCURACY_TEST_OBJ}
+	${F90} ${FFLAGS_} -o $@ ${PSOL_ACCURACY_TEST_OBJ} ${INCS}
 
 
 test_driver : ${HEADERS} ${TEST_DRIVER_OBJ}
