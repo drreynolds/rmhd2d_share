@@ -29,7 +29,7 @@ CC = openmpicc
 CFLAGS = -O2
 
 # SUNDIALS-specific preprocessor directives (F-to-C conversion)
-SUND_DEFS = -DSUNDIALS_CASE_LOWER -DLONGINT8 -DSUNDIALS_UNDERSCORE_ONE
+SUND_DEFS = -DSUNDIALS_CASE_LOWER -DSUNDIALS_UNDERSCORE_ONE
 
 # Location of C standard header files (stdlib.h, etc.)
 C_INCD = -I/usr/include
