@@ -25,7 +25,7 @@ function [rho,u,v,w,Bx,By,Bz,p,divB,J,e,x,y,z] = read_output2d(fname,Nx,Ny)
 %         y - y-coordinates (1D)
 %
 % Daniel Reynolds
-% Mathematics @ U.C. San Diego
+% Mathematics @ SMU
 %
 
 % open file for input

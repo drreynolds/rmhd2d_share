@@ -1,6 +1,10 @@
 ###################################################################
-#  machine-specific Makefile for unigrid resistive MHD code
+#  Ravi Samtaney, KAUST Mechanical Engineering
 #  Daniel R. Reynolds, SMU Mathematics
+#  Copyright 2004
+#  All Rights Reserved
+###################################################################
+#  machine-specific Makefile for unigrid resistive MHD code
 ###################################################################
 
 
@@ -30,9 +34,6 @@ C_INCD = -I/usr/include
 
 # SUNDIALS installation location
 SUNDROOT = /usr/local/sundials-2.3.0/intel
-
-# HYPRE installation location
-HYPREROOT = /usr/local/hypre-2.2.0b/intel
 
 # MPI installation location (F90 compatible), and required libs
 MPIROOT  = /usr/local/mpich2-1.0.7/intel

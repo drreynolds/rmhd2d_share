@@ -1,6 +1,10 @@
 ###################################################################
+#  Ravi Samtaney, KAUST Mechanical Engineering
+#  Daniel R. Reynolds, SMU Mathematics
+#  Copyright 2004
+#  All Rights Reserved
+###################################################################
 #  Problem configuration Makefile
-#  Daniel R. Reynolds, UCSD Mathematics
 ###################################################################
 
 ####### Compile-time problem definitions #######
@@ -41,12 +45,7 @@ DISCRETIZATION =
 #EXTRADEFS = -DPARALLEL -DRTSOURCE
 EXTRADEFS = -DPARALLEL -DRTSOURCE -DDYNAMIC
 
-# HYPRE-specific preprocessor directives
-# Note: if we're NOT using -DPARALLEL, then we must use -DHYPRE_SEQUENTIAL
-#HYPRE_DEFS = -DHYPRE_SEQUENTIAL
-HYPRE_DEFS =
-
 # overall problem-specific preprocessor directives
-PROB_DEFS = $(DIMENSION) $(DISCRETIZATION) $(EXTRADEFS) $(HYPRE_DEFS)
+PROB_DEFS = $(DIMENSION) $(DISCRETIZATION) $(EXTRADEFS)
 
 ####### End of Make.config #######

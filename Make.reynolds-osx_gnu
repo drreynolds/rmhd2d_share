@@ -5,7 +5,7 @@
 
 
 # Fortran 90/95 compiler
-F90 = mpif90
+F90 = openmpif90
 
 # Fortran compile flags
 #FFLAGS = -p -g -O0 -ffixed-form -fbackslash  # gnu debug
@@ -23,7 +23,7 @@ SUND_DEFS = -DSUNDIALS_CASE_LOWER -DSUNDIALS_UNDERSCORE_ONE \
             -DSUNDIALS_DOUBLE_PRECISION -DLONGINT8
 
 # C compiler (for SUNDIALS interface)
-CC = mpicc
+CC = openmpicc
 
 # C compile flags
 #CFLAGS = -p -g -O0 -Wall  # debug
@@ -34,9 +34,6 @@ C_INCD = -I/usr/include
 
 # SUNDIALS installation location
 SUNDROOT = /usr/local/sundials-2.4.0
-
-# HYPRE installation location
-HYPREROOT = /usr/local/hypre-2.6.0b
 
 # MPI installation location (F90 compatible), and required libs
 MPIROOT  = 

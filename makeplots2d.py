@@ -10,10 +10,10 @@ import mhd2d_tools as mhd2d
 times, energy, mass = mhd2d.load_cons()
 kenergy, menergy, ienergy = mhd2d.load_energies()
 xl, xr, yl, yr, zl, zr, ndump = mhd2d.load_mhd()
-#mu, eta, kappa, gamma = load_props()
-#hprec, vprec, combo, nwaves, order, ADIcorr = load_prec()
-#nx, ny, nz, xprocs, yprocs, zprocs, xbc, ybc, zbc = load_mesh()
-#Newton, Krylov, Fnorm, dB, SolTime = load_RunHistory()
+mu, eta, kappa, gamma = mhd2d.load_props()
+#hprec, vprec, combo, nwaves, order, ADIcorr = mhd2d.load_prec()
+nx, ny, nz, xprocs, yprocs, zprocs, xbc, ybc, zbc = mhd2d.load_mesh()
+Newton, Krylov, Fnorm, dB, SolTime = mhd2d.load_RunHistory()
 
 # plot conservation of energy
 figure()

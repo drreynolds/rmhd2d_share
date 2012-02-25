@@ -1,7 +1,13 @@
 c -*- Mode: Fortran; -*-
 c-----------------------------------------------------------------
+c     Ravi Samtaney
+c     KAUST, Mechanical Engineering
+c
 c     Daniel R. Reynolds
-c     UC San Diego, Mathematics
+c     SMU, Mathematics
+c
+c     Copyright 2004
+c     All Rights Reserved
 c-----------------------------------------------------------------
 c     $Log: impRMHD_driver.F,v $
 c=================================================================
@@ -176,8 +182,8 @@ c     initialize KINSOL solver structures
       call KinsolInit(uscale, fscale, iopt, ropt, 
      &     dtfac, tstop, globalstrat)
 
-c     save divFlux at initial state
-      call divFlux(ux,dFnew)
+c     save rhs at initial state
+      call computerhs(ux,dFnew)
 
 c     if parallel, wait until all processors are ready
 #ifdef PARALLEL
@@ -351,41 +357,23 @@ c            call WriteAVSFile(ux,timeStep)
 
 
 c     output final solver diagnostics
-      if (outnode) write(6,'(A,A,4(A,i9),29(A,es12.5),A)') 
+      if (outnode) write(6,'(A,A,2(A,i9),13(A,es12.5),A)') 
      &     '\n  ---------------------------------------',
      &     '\n  Runtime statistics:\n',
      &     '\n    Total Newton Iterations =',totnewton, 
      &     '\n    Total Krylov Iterations =',totkrylov,
-     &     '\n    Total Precond. Setups   =',totpset, 
-     &     '\n    Total Precond. Solves   =',totpsol,
      &     '\n    Total Solution Time     =',prof_time(1),
      &     '\n    Total RHS Time          =',prof_time(2),
      &     '\n    Total Comm Time         =',prof_time(3),
-     &     '\n    Total Pcond Setup Time  =',prof_time(4),
-     &     '\n    Total Pcond Solve Time  =',prof_time(5),
      &     '\n    Total Diags & I/O Time  =',prof_time(6),
      &     '\n    Total Cons->Prim Time   =',prof_time(7),
      &     '\n    Total Flux Init Time    =',prof_time(8),
-     &     '\n    Total HFlux-X Time      =',prof_time(9),
-     &     '\n    Total VFlux-X Time      =',prof_time(10),
-     &     '\n    Total HFlux-Y Time      =',prof_time(11),
-     &     '\n    Total VFlux-Y Time      =',prof_time(12),
-     &     '\n    Total HFlux-Z Time      =',prof_time(13),
-     &     '\n    Total VFlux-Z Time      =',prof_time(14),
      &     '\n    Total Divergence Time   =',prof_time(15),
      &     '\n    Avg RHS Time            =',prof_time(2)/prof_count(2),
      &     '\n    Avg Comm Time           =',prof_time(3)/prof_count(3),
-     &     '\n    Avg Pcond Setup Time    =',prof_time(4)/prof_count(4),
-     &     '\n    Avg Pcond Solve Time    =',prof_time(5)/prof_count(5),
      &     '\n    Avg Diags & I/O Time    =',prof_time(6)/prof_count(6),
      &     '\n    Avg Cons->Prim Time     =',prof_time(7)/prof_count(7),
      &     '\n    Avg Flux Init Time      =',prof_time(8)/prof_count(8),
-     &     '\n    Avg HFlux-X Time        =',prof_time(9)/prof_count(9),
-     &   '\n    Avg VFlux-X Time        =',prof_time(10)/prof_count(10),
-     &   '\n    Avg HFlux-Y Time        =',prof_time(11)/prof_count(11),
-     &   '\n    Avg VFlux-Y Time        =',prof_time(12)/prof_count(12),
-     &   '\n    Avg HFlux-Z Time        =',prof_time(13)/prof_count(13),
-     &   '\n    Avg VFlux-Z Time        =',prof_time(14)/prof_count(14),
      &   '\n    Avg Divergence Time     =',prof_time(15)/prof_count(15),
      &     '\n  ---------------------------------------\n'
 

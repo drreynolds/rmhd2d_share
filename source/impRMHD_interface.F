@@ -1,7 +1,13 @@
 c -*- Mode: Fortran; -*-
 c-----------------------------------------------------------------------
+c     Ravi Samtaney
+c     KAUST, Mechanical Engineering
+c
 c     Daniel R. Reynolds
-c     UC San Diego, Mathematics
+c     SMU, Mathematics
+c
+c     Copyright 2004
+c     All Rights Reserved
 c-----------------------------------------------------------------------
 c     $Log: impRMHD_interface.F,v $
 c=======================================================================
@@ -16,7 +22,7 @@ c        function evaluation
 c
 c     Contains the internal variables:
 c         uold - (dbl(*)) state vector for previous full timestep
-c        dFold - (dbl(*)) divFlux for previous full timestep
+c        dFold - (dbl(*)) rhs for previous full timestep
 c        theta - (dbl) theta-scheme parameter
 c           dt - (dbl) current timestep increment
 c           vv - primitive variables
@@ -145,7 +151,7 @@ c     start the RHS profiler
       call prof_start(2)
 
 c     get the divergence of the flux at the new state uu
-      call divFlux(uu,dFnew)
+      call computerhs(uu,dFnew)
 
 c     combine all parts into the return vector fval, only adjusting 
 c     the interior volume elements (implements a standard theta-scheme)
@@ -300,8 +306,6 @@ c     Explanation of nonlinear solver parameters in kincontrol.inp:
 c
 c     specifing default vs custom routines (0=>default, 1=>custom)
 c         useMyJac  = 1  =>  use customized fkjtimes routine
-c         useMyPrec = 1  =>  use customized fkpset, fkpsol routines
-c         freezePrec = 1 =>  only set up preconditioner on init.
 c
 c     general Newton-Krylov information
 c         globalstrat:  globalization strategy, 
@@ -461,9 +465,6 @@ c     set up kinsol nonlinear solver information
          else 
             write(6,'(A)') '\nGMRES iterative linear solver'
          endif
-         write(6,'(A,A,i2,A,i2)') '\nPreconditioning:',
-     &        '\n    useMyPrec =',useMyPrec,
-     &        '\n   freezePrec =',freezePrec
          write(6,'(A,6(A,i6),7(A,es9.2),3(A,8(es8.1),A),A,es9.2)')
      &        '\nKINSOL solver parameters:',
      &        '\n         maxl =',maxl,
@@ -687,26 +688,6 @@ c           GMRES
 #endif
       endif         
 
-c$$$c        spgmr dataspace
-c$$$      call fkinspgmr(maxl, maxlrst, kier)
-c$$$#ifdef PARALLEL
-c$$$      call MPI_Allreduce( kier, kiertot, 1, MPI_INTEGER, MPI_SUM, 
-c$$$     &     comm3d, ierr)
-c$$$      if (kiertot /= 0) then
-c$$$         if(outnode) print *,' impRMHD_driver: fkinspgmr failed'
-c$$$         if (kier /= 0) print '(A,i4,A,i2)','    proc ',my_id,
-c$$$     &        ': ier =',kier
-c$$$         return
-c$$$      end if
-c$$$      call mpi_barrier(comm3d,ierr)
-c$$$#else
-c$$$      if (kier /= 0) then
-c$$$         print '(A,A,i2)',' impRMHD_driver: fkinspgmr',
-c$$$     &        ' failed, ier =',kier 
-c$$$         return
-c$$$      end if
-c$$$#endif
-
 c        J*v routine specification
       call fkinspilssetjac(useMyJac, kier)
 #ifdef PARALLEL
@@ -726,48 +707,6 @@ c        J*v routine specification
          return
       end if
 #endif
-
-c        preconditioner setup/solve (0 => default, 1 => custom routine)
-      call fkinspilssetprec(useMyPrec, kier)
-#ifdef PARALLEL
-      call MPI_Allreduce( kier, kiertot, 1, MPI_INTEGER, MPI_SUM, 
-     &     comm3d, ierr)
-      if (kiertot /= 0) then
-         if(outnode) print *,' impRMHD_driver: fkinspilssetprec failed'
-         if (kier /= 0) print '(A,i4,A,i2)','    proc ',my_id,
-     &        ': ier =',kier
-         return
-      end if
-      call mpi_barrier(comm3d,ierr)
-#else
-      if (kier /= 0) then
-         print '(A,A,i2)',' impRMHD_driver: fkinspilssetprec',
-     &        ' failed, ier =',kier 
-         return
-      end if
-#endif
-
-
-c     call custom preconditioner initialization routines
-      call combo_prec_init(kier)
-#ifdef PARALLEL
-      call MPI_Allreduce( kier, kiertot, 1, MPI_INTEGER, MPI_SUM, 
-     &     comm3d, ierr)
-      if (kiertot /= 0) then
-         if(outnode) print *,' impRMHD_driver: combo_prec_init failed'
-         if (kier /= 0) print '(A,i4,A,i2)','    proc ',my_id,
-     &        ': ier =',kier
-         return
-      end if
-      call mpi_barrier(comm3d,ierr)
-#else
-      if (kier /= 0) then
-         print '(A,A,i2)',' impRMHD_driver: combo_prec_init failed, ',
-     &        ' ier =',kier 
-         return
-      end if
-#endif
-
 
 c        set uscale and fscale vectors
       uscale(:,:,:,1) = u1sc;  uscale(:,:,:,2) = u2sc
@@ -812,9 +751,6 @@ c======= Declarations =========
 
 c======= Internals ============
 
-
-c     free preconditioner data
-      call combo_prec_free()
 
 c     free kinsol internal data
       call fkinfree
@@ -931,27 +867,7 @@ c======= Internals ============
 c     initialize return flag to success
       kier = 0
 
-c     if freezePrec is set to 2, return with success
-      if (freezePrec == 2) then
-         return
-      endif
-
-c     start the preconditioner setup profiler
-      call prof_start(4)
-
-c     if freezePrec is set to 1, set to 2
-      if (freezePrec == 1)  then
-         freezePrec = 2
-      endif
-
-c     set gamdt (in the general Jacobian sense of Jtot = I - gamdt*Jf)
-      gamdt = theta*dt
-
-c     set up preconditioners
-      call combo_prec_setup(uu, fu, gamdt, v1, v2, kier)
-
-c     stop the preconditioner setup profiler
-      call prof_stop(4)
+c     no preconditioner, so just return
 
       return
       end subroutine fkpset
@@ -997,21 +913,7 @@ c======= Internals ============
 c     set return flag to success
       kier = 0
 
-c     start the preconditioner solve profiler
-      call prof_start(5)
-
-c     set gamdt (in the general Jacobian sense of Jtot = I - gamdt*Jf)
-      gamdt = theta*dt
-
-c     set delta to the desired viscous preconditioner tolerance
-      call fnvmhdmaxnorm(fu,fnorm)
-      delta = 1.0d-4*fnorm
-
-c     call preconditioner solvers
-      call combo_prec_solve(uu, fu, gamdt, delta, zz, vt, kier)
-
-c     stop the preconditioner solve profiler
-      call prof_stop(5)
+c     no preconditioner, so just return
 
       return
       end subroutine fkpsol
@@ -1124,12 +1026,6 @@ c     root outputs solver statistics
          write(6,'(4x,A,es12.5)')'Final scaled norm of f(u) =',ropt(1)
          write(6,'(4x,A,es12.5)')'Scaled final steplength   =',ropt(2)
          write(6,'(4x,A,i5)')'Number Krylov iterations  =',iopt(14)
-         if (iopt(12) /= 0) then
-            write(6,'(4x,A,i5)')'Num. Precond. evaluations =',iopt(12)
-         endif
-         if (iopt(13) /= 0) then
-            write(6,'(4x,A,i5)')'Num. Precond. solves      =',iopt(13)
-         endif
          if (iopt(15) /= 0) then
             write(6,'(4x,A,i5)')'Num. Lin. Conv. Failures  =',iopt(15)
          endif
@@ -1254,9 +1150,9 @@ c=================================================================
 
 
 
-      subroutine divFlux(uu,dFlux)
+      subroutine computerhs(uu,dFlux)
 c-----------------------------------------------------------------------
-c     Description: divFlux provides the divergence of the flux for 
+c     Description: computerhs provides the divergence of the flux for 
 c        the conservation equation describing the nonlinearly-resistive,
 c        ideal MHD system.
 c
@@ -1316,43 +1212,33 @@ c     construct the vector of primitive variables
 
 c     zero the fluxes (necessary???)
       call prof_start(8)
-      do l=1,nvar,1
-         do k=izlo,izhi,1
-            do j=iylo,iyhi,1
-               do i=ixlo,ixhi,1
-                  finv(i,j,k,l) = 0.0d0
+      finv = 0.0d0
 #ifndef ONE_D
-                  ginv(i,j,k,l) = 0.0d0
+      ginv = 0.0d0
 #ifndef TWO_D
-                  hinv(i,j,k,l) = 0.0d0
+      hinv = 0.0d0
 #endif
 #endif
 #ifndef NOVISCFLUX
-                  fvis(i,j,k,l) = 0.0d0
+      fvis = 0.0d0
 #ifndef ONE_D
-                  gvis(i,j,k,l) = 0.0d0
+      gvis = 0.0d0
 #ifndef TWO_D
-                  hvis(i,j,k,l) = 0.0d0
+      hvis = 0.0d0
 #endif
 #endif
 #endif
-               end do
-            end do
-         end do
-      end do
 
 c     get the viscous flux requirements dudx and dbdx
 #ifndef NOVISCFLUX
+      dudx = 0.d0
+      dbdx = 0.d0
       do m=1,3,1
          do k=izlo,izhi,1
             do j=iylo,iyhi,1
                do i=ixlo,ixhi,1
                   dudx(i,j,k,1,m) = vv(i,j,k,m+1)
                   dbdx(i,j,k,1,m) = vv(i,j,k,m+4)
-                  dudx(i,j,k,2,m) = 0.d0
-                  dbdx(i,j,k,2,m) = 0.d0
-                  dudx(i,j,k,3,m) = 0.d0
-                  dbdx(i,j,k,3,m) = 0.d0
                end do
             end do
          end do
@@ -1733,750 +1619,5 @@ c
       call prof_stop(15)
 
       return
-      end subroutine divFlux
-c=======================================================================
-
-
-
-
-
-      subroutine divFlux_x(vx, dFlux_x)
-c-----------------------------------------------------------------------
-c     Description: divFlux_x provides a centered-difference spatial 
-c        approximation to the divergence of the flux in the x-direction
-c        for the conservation equation describing the hyperbolic 
-c        portion of the nonlinearly-resistive, ideal MHD system.
-c
-c     Arguments:
-c             vx - (dbl(*), input)  primitive variables for evaluation
-c        dFlux_x - (dbl(*), output) divergence of the flux
-c-----------------------------------------------------------------------
-c======= Inclusions ===========
-      use mesh
-      use properties
-      use timelevel_data
-
-c======= Declarations =========
-      implicit none
-
-c     calling variables
-      double precision, dimension(ixlo:ixhi,iylo:iyhi,izlo:izhi,nvar) 
-     &     :: vx, dFlux_x
-
-c     differencing factors
-      double precision :: xfac
-
-c     indexes for flux calculations
-      integer :: i, j, k
-      
-
-
-c======= Internals ============
-
-
-c     set differencing factors
-      xfac = 1.0d0/dx
-
-
-c------------ x-directional fluxes ------------
-c     Hyperbolic fluxes
-      inlo = ixlo;  inhi = ixhi
-#ifdef UPWIND
-#ifdef PRIMITIVE
-c        using upwind with eigensystem from primitive variables
-      call InviscidFluxRP(finv,vx,1,dt)
-#elif  ROE
-c        using upwind with eigensystem from conservative variables
-      call InviscidFluxRoe(finv,vx,1,dt)
-#else
-c        using upwind with Lax-Friedrichs scheme
-      call InviscidFluxLF(finv,vx,1,dt)
-#endif
-#else
-c        using centered-differences (of some form)
-#ifdef TCD
-c        2nd-order tuned central differences
-      call InviscidFluxTCD(finv,vx,1,dt)
-#elif CD4
-c        4th-order standard central differences
-      call InviscidFluxCD4(finv,vx,1,dt)
-#elif ZIP
-c        2nd-order zip difference
-      call InviscidFluxZip(finv,vx,1,dt)
-#else
-c        2nd-order standard central differences
-      call InviscidFluxCD2(finv,vx,1,dt)
-#endif
-#endif
-
-
-c------------ construction of div(flux) ------------
-c
-c     Density
-      do k=1,nzlocal,1
-         do j=1,nylocal,1
-            do i=1,nxlocal,1
-               dFlux_x(i,j,k,1) = -xfac*(finv(i,j,k,1)-finv(i-1,j,k,1))
-            end do
-         end do
-      end do
-c
-c     X-Momentum
-      do k=1,nzlocal,1
-         do j=1,nylocal,1
-            do i=1,nxlocal,1
-               dFlux_x(i,j,k,2) = -xfac*(finv(i,j,k,2)-finv(i-1,j,k,2))
-            end do
-         end do
-      end do
-c
-c     Y-Momentum
-      do k=1,nzlocal,1
-         do j=1,nylocal,1
-            do i=1,nxlocal,1
-               dFlux_x(i,j,k,3) = -xfac*(finv(i,j,k,3)-finv(i-1,j,k,3))
-            end do
-         end do
-      end do
-c
-c     Z-Momentum
-      do k=1,nzlocal,1
-         do j=1,nylocal,1
-            do i=1,nxlocal,1
-#ifdef TWO_HALF_D
-               dFlux_x(i,j,k,4) = -xfac*(finv(i,j,k,4)-finv(i-1,j,k,4))
-#else
-               dFlux_x(i,j,k,4) = 0.d0
-#endif
-            end do
-         end do
-      end do
-c
-c     X-Magnetic field
-      do k=1,nzlocal,1
-         do j=1,nylocal,1
-            do i=1,nxlocal,1
-               dFlux_x(i,j,k,5) = -xfac*(finv(i,j,k,5)-finv(i-1,j,k,5))
-            end do
-         end do
-      end do
-c
-c     Y-Magnetic field
-      do k=1,nzlocal,1
-         do j=1,nylocal,1
-            do i=1,nxlocal,1
-               dFlux_x(i,j,k,6) = -xfac*(finv(i,j,k,6)-finv(i-1,j,k,6))
-            end do
-         end do
-      end do
-c
-c     Z-Magnetic field
-      do k=1,nzlocal,1
-         do j=1,nylocal,1
-            do i=1,nxlocal,1
-#ifdef TWO_HALF_D
-               dFlux_x(i,j,k,7) = -xfac*(finv(i,j,k,7)-finv(i-1,j,k,7))
-#else
-               dFlux_x(i,j,k,7) = 0.d0
-#endif
-            end do
-         end do
-      end do
-c
-c     Energy
-      do k=1,nzlocal,1
-         do j=1,nylocal,1
-            do i=1,nxlocal,1
-               dFlux_x(i,j,k,8) = -xfac*(finv(i,j,k,8)-finv(i-1,j,k,8))
-            end do
-         end do
-      end do
-
-      return
-      end subroutine divFlux_x
-c=======================================================================
-
-
-
-
-
-      subroutine divFlux_y(vx, dFlux_y)
-c-----------------------------------------------------------------------
-c     Description: divFlux_y provides a centered-difference spatial 
-c        approximation to the divergence of the flux in the y-direction
-c        for the conservation equation describing the hyperbolic 
-c        portion of the nonlinearly-resistive, ideal MHD system.
-c
-c     Arguments:
-c             vx - (dbl(*), input)  primitive variables for evaluation
-c        dFlux_y - (dbl(*), output) divergence of the flux
-c-----------------------------------------------------------------------
-c======= Inclusions ===========
-      use mesh
-      use properties
-      use timelevel_data
-
-c======= Declarations =========
-      implicit none
-
-c     calling variables
-      double precision, dimension(ixlo:ixhi,iylo:iyhi,izlo:izhi,nvar) 
-     &     :: vx, dFlux_y
-
-c     differencing factors
-      double precision :: yfac
-
-c     indexes for flux calculations
-      integer :: i, j, k
-      
-
-c======= Internals ============
-#ifndef ONE_D
-
-
-c     set differencing factors
-      yfac = 1.0d0/dy
-
-c------------ y-directional fluxes ------------
-c     Hyperbolic fluxes
-      inlo = iylo;  inhi = iyhi
-#ifdef UPWIND
-#ifdef PRIMITIVE
-c        using upwind with eigensystem from primitive variables
-      call InviscidFluxRP(ginv,vx,2,dt)
-#elif  ROE
-c        using upwind with eigensystem from conservative variables
-      call InviscidFluxRoe(ginv,vx,2,dt)
-#else
-c        using upwind with Lax-Friedrichs scheme
-      call InviscidFluxLF(ginv,vx,2,dt)
-#endif
-#else
-c        using centered-differences (of some form)
-#ifdef TCD
-c        2nd-order tuned central differences
-      call InviscidFluxTCD(ginv,vx,2,dt)
-#elif CD4
-c        4th-order standard central differences
-      call InviscidFluxCD4(ginv,vx,2,dt)
-#elif ZIP
-c        2nd-order Zip difference
-      call InviscidFluxZip(ginv,vx,2,dt)
-#else
-c        2nd-order standard central differences
-      call InviscidFluxCD2(ginv,vx,2,dt)
-#endif
-#endif
-
-
-c------------ construction of div(flux) ------------
-c
-c     Density
-      do k=1,nzlocal,1
-         do j=1,nylocal,1
-            do i=1,nxlocal,1
-               dFlux_y(i,j,k,1) = -yfac*(ginv(i,j,k,1)-ginv(i,j-1,k,1))
-            end do
-         end do
-      end do
-c
-c     X-Momentum
-      do k=1,nzlocal,1
-         do j=1,nylocal,1
-            do i=1,nxlocal,1
-               dFlux_y(i,j,k,2) = -yfac*(ginv(i,j,k,4)-ginv(i,j-1,k,4))
-            end do
-         end do
-      end do
-c
-c     Y-Momentum
-      do k=1,nzlocal,1
-         do j=1,nylocal,1
-            do i=1,nxlocal,1
-               dFlux_y(i,j,k,3) = -yfac*(ginv(i,j,k,2)-ginv(i,j-1,k,2))
-            end do
-         end do
-      end do
-c
-c     Z-Momentum
-      do k=1,nzlocal,1
-         do j=1,nylocal,1
-            do i=1,nxlocal,1
-#ifdef TWO_HALF_D
-               dFlux_y(i,j,k,4) = -yfac*(ginv(i,j,k,3)-ginv(i,j-1,k,3))
-#else
-               dFlux_y(i,j,k,4) = 0.d0
-#endif
-            end do
-         end do
-      end do
-c
-c     X-Magnetic field
-      do k=1,nzlocal,1
-         do j=1,nylocal,1
-            do i=1,nxlocal,1
-               dFlux_y(i,j,k,5) = -yfac*(ginv(i,j,k,7)-ginv(i,j-1,k,7))
-            end do
-         end do
-      end do
-c
-c     Y-Magnetic field
-      do k=1,nzlocal,1
-         do j=1,nylocal,1
-            do i=1,nxlocal,1
-               dFlux_y(i,j,k,6) = -yfac*(ginv(i,j,k,5)-ginv(i,j-1,k,5))
-            end do
-         end do
-      end do
-c
-c     Z-Magnetic field
-      do k=1,nzlocal,1
-         do j=1,nylocal,1
-            do i=1,nxlocal,1
-#ifdef TWO_HALF_D
-               dFlux_y(i,j,k,7) = -yfac*(ginv(i,j,k,6)-ginv(i,j-1,k,6))
-#else
-               dFlux_y(i,j,k,7) = 0.d0
-#endif
-            end do
-         end do
-      end do
-c
-c     Energy
-      do k=1,nzlocal,1
-         do j=1,nylocal,1
-            do i=1,nxlocal,1
-               dFlux_y(i,j,k,8) = -yfac*(ginv(i,j,k,8)-ginv(i,j-1,k,8))
-            end do
-         end do
-      end do
-
-#endif
-
-      return
-      end subroutine divFlux_y
-c=======================================================================
-
-
-
-
-
-      subroutine divFlux_z(vx, dFlux_z)
-c-----------------------------------------------------------------------
-c     Description: divFlux_z provides a centered-difference spatial 
-c        approximation to the divergence of the flux in the z-direction
-c        for the conservation equation describing the hyperbolic 
-c        portion of the nonlinearly-resistive, ideal MHD system.
-c
-c     Arguments:
-c             vx - (dbl(*), input)  primitive variables for evaluation
-c        dFlux_z - (dbl(*), output) divergence of the flux
-c-----------------------------------------------------------------------
-c======= Inclusions ===========
-      use mesh
-      use properties
-      use timelevel_data
-
-c======= Declarations =========
-      implicit none
-
-c     calling variables
-      double precision, dimension(ixlo:ixhi,iylo:iyhi,izlo:izhi,nvar) 
-     &     :: vx, dFlux_z
-
-c     differencing factors
-      double precision :: zfac
-
-c     indexes for flux calculations
-      integer :: i, j, k
-      
-
-c======= Internals ============
-#ifndef ONE_D
-#ifndef TWO_D
-
-
-c     set differencing factors
-      zfac = 1.0d0/dz
-
-c------------ z-directional fluxes ------------
-c     Hyperbolic fluxes
-      inlo = izlo;  inhi = izhi
-#ifdef UPWIND
-#ifdef PRIMITIVE
-c        using upwind with eigensystem from primitive variables
-      call InviscidFluxRP(hinv,vx,3,dt)
-#elif  ROE
-c        using upwind with eigensystem from conservative variables
-      call InviscidFluxRoe(hinv,vx,3,dt)
-#else
-c        using upwind with Lax-Friedrichs scheme
-      call InviscidFluxLF(hinv,vx,3,dt)
-#endif
-#else
-c        using centered-differences (of some form)
-#ifdef TCD
-c        2nd-order tuned central differences
-      call InviscidFluxTCD(hinv,vx,3,dt)
-#elif CD4
-c        4th-order standard central differences
-      call InviscidFluxCD4(hinv,vx,3,dt)
-#elif ZIP
-c        2nd-order Zip difference
-      call InviscidFluxZip(hinv,vx,3,dt)
-#else
-c        2nd-order standard central differences
-      call InviscidFluxCD2(hinv,vx,3,dt)
-#endif
-#endif
-
-
-c------------ construction of div(flux) ------------
-c
-c     Density
-      do k=1,nzlocal,1
-         do j=1,nylocal,1
-            do i=1,nxlocal,1
-               dFlux_z(i,j,k,1) = -zfac*(hinv(i,j,k,1)-hinv(i,j,k-1,1))
-            end do
-         end do
-      end do
-c
-c     X-Momentum
-      do k=1,nzlocal,1
-         do j=1,nylocal,1
-            do i=1,nxlocal,1
-               dFlux_z(i,j,k,2) = -zfac*(hinv(i,j,k,3)-hinv(i,j,k-1,3))
-            end do
-         end do
-      end do
-c
-c     Y-Momentum
-      do k=1,nzlocal,1
-         do j=1,nylocal,1
-            do i=1,nxlocal,1
-               dFlux_z(i,j,k,3) = -zfac*(hinv(i,j,k,4)-hinv(i,j,k-1,4))
-            end do
-         end do
-      end do
-c
-c     Z-Momentum
-      do k=1,nzlocal,1
-         do j=1,nylocal,1
-            do i=1,nxlocal,1
-               dFlux_z(i,j,k,4) = -zfac*(hinv(i,j,k,2)-hinv(i,j,k-1,2))
-            end do
-         end do
-      end do
-c
-c     X-Magnetic field
-      do k=1,nzlocal,1
-         do j=1,nylocal,1
-            do i=1,nxlocal,1
-               dFlux_z(i,j,k,5) = -zfac*(hinv(i,j,k,6)-hinv(i,j,k-1,6))
-            end do
-         end do
-      end do
-c
-c     Y-Magnetic field
-      do k=1,nzlocal,1
-         do j=1,nylocal,1
-            do i=1,nxlocal,1
-               dFlux_z(i,j,k,6) = -zfac*(hinv(i,j,k,7)-hinv(i,j,k-1,7))
-            end do
-         end do
-      end do
-c
-c     Z-Magnetic field
-      do k=1,nzlocal,1
-         do j=1,nylocal,1
-            do i=1,nxlocal,1
-               dFlux_z(i,j,k,7) = -zfac*(hinv(i,j,k,5)-hinv(i,j,k-1,5))
-            end do
-         end do
-      end do
-c
-c     Energy
-      do k=1,nzlocal,1
-         do j=1,nylocal,1
-            do i=1,nxlocal,1
-               dFlux_z(i,j,k,8) = -zfac*(hinv(i,j,k,8)-hinv(i,j,k-1,8))
-            end do
-         end do
-      end do
-
-#endif
-#endif
-
-      return
-      end subroutine divFlux_z
-c=======================================================================
-
-
-
-
-
-      subroutine divFlux_viscous(uu,dFlux)
-c-----------------------------------------------------------------------
-c     Description: divFlux_viscous provides a centered-difference 
-c        spatial approximation to the divergence of the flux for the 
-c        viscous portion of the conservation equation describing the 
-c        single-fluid resistive, ideal MHD system.
-c
-c     Arguments:
-c           uu - (dbl(*), input) fluid variables at new time
-c        dFlux - (dbl(*), output) divergence of the flux
-c-----------------------------------------------------------------------
-c======= Inclusions ===========
-      use mesh
-      use properties
-      use timelevel_data
-
-c======= Declarations =========
-      implicit none
-
-c     calling variables
-      double precision, dimension(ixlo:ixhi,iylo:iyhi,izlo:izhi,nvar) 
-     &     :: uu, dFlux
-
-c     differencing factors (depending on dimension)
-      double precision :: xfac, yfac, zfac
-
-c     indexes for flux calculations
-      integer :: indx, indy, indz, i, j, k, l, m
-      
-
-
-c======= Internals ============
-
-#ifndef NOVISCFLUX
-
-c     set differencing factors
-      xfac = 1.0d0/dx;  yfac = 1.0d0/dy;  zfac = 1.0d0/dz
-
-
-c     construct the vector of primitive variables
-      call ConservedToPrimitive(uu,vv)
-
-
-c     zero the fluxes (necessary???)
-      do l=1,nvar,1
-         do k=izlo,izhi,1
-            do j=iylo,iyhi,1
-               do i=ixlo,ixhi,1
-                  fvis(i,j,k,l) = 0.0d0
-#ifndef ONE_D
-                  gvis(i,j,k,l) = 0.0d0
-#ifndef TWO_D
-                  hvis(i,j,k,l) = 0.0d0
-#endif
-#endif
-               end do
-            end do
-         end do
-      end do
-
-c     get the viscous flux requirements dudx and dbdx
-      do m=1,3,1
-         do k=izlo,izhi,1
-            do j=iylo,iyhi,1
-               do i=ixlo,ixhi,1
-                  dudx(i,j,k,1,m) = vv(i,j,k,m+1)
-                  dbdx(i,j,k,1,m) = vv(i,j,k,m+4)
-                  dudx(i,j,k,2,m) = 0.d0
-                  dbdx(i,j,k,2,m) = 0.d0
-                  dudx(i,j,k,3,m) = 0.d0
-                  dbdx(i,j,k,3,m) = 0.d0
-               end do
-            end do
-         end do
-      end do
-      call GradientVector(dudx)
-      call GradientVector(dbdx)
-
-c------------ x-directional viscous fluxes ------------
-      inlo = ixlo;  inhi = ixhi
-      indx = 1;  indy = 0;  indz = 0
-#ifdef TCD
-c     2nd-order tuned central differences
-      call ViscousFluxTCD(fvis,vv,dudx,dbdx,1,dt,indx,indy,indz)
-#elif CD4
-c     4th-order standard central differences
-      call ViscousFluxCD4(fvis,vv,dudx,dbdx,1,dt,indx,indy,indz)
-#else
-c     2nd-order standard central differences
-      call ViscousFluxCD2(fvis,vv,dudx,dbdx,1,dt,indx,indy,indz)
-#endif
-
-
-#ifndef ONE_D
-c------------ y-directional viscous fluxes ------------
-      inlo = iylo;  inhi = iyhi
-      indx = 0;  indy = 1;  indz = 0
-#ifdef TCD
-c     2nd-order tuned central differences
-      call ViscousFluxTCD(gvis,vv,dudx,dbdx,2,dt,indx,indy,indz)
-#elif CD4
-c     4th-order standard central differences
-      call ViscousFluxCD4(gvis,vv,dudx,dbdx,2,dt,indx,indy,indz)
-#else
-c     2nd-order standard central differences
-      call ViscousFluxCD2(gvis,vv,dudx,dbdx,2,dt,indx,indy,indz)
-#endif
-
-
-#ifndef TWO_D
-c------------ z-directional viscous fluxes ------------
-      inlo = izlo;  inhi = izhi
-      indx = 0;  indy = 0;  indz = 1
-#ifdef TCD
-c     2nd-order tuned central differences
-      call ViscousFluxTCD(hvis,vv,dudx,dbdx,3,dt,indx,indy,indz)
-#elif CD4
-c     4th-order standard central differences
-      call ViscousFluxCD4(hvis,vv,dudx,dbdx,3,dt,indx,indy,indz)
-#else
-c     2nd-order standard central differences
-      call ViscousFluxCD2(hvis,vv,dudx,dbdx,3,dt,indx,indy,indz)
-#endif
-
-#endif
-#endif
-
-
-c------------ construction of div(flux) ------------
-c
-c     Density
-      do k=1,nzlocal,1
-         do j=1,nylocal,1
-            do i=1,nxlocal,1
-               dFlux(i,j,k,1) = 0.d0
-            enddo
-         enddo
-      enddo
-c
-c     X-Momentum
-      do k=1,nzlocal,1
-         do j=1,nylocal,1
-            do i=1,nxlocal,1
-               dFlux(i,j,k,2) = 
-     &               xfac*( fvis(i,j,k,2) - fvis(i-1,j,k,2) )
-#ifndef ONE_D
-     &              +yfac*( gvis(i,j,k,4) - gvis(i,j-1,k,4) )
-#ifndef TWO_D
-     &              +zfac*( hvis(i,j,k,3) - hvis(i,j,k-1,3) )
-#endif
-#endif
-            enddo
-         enddo
-      enddo
-c
-c     Y-Momentum
-      do k=1,nzlocal,1
-         do j=1,nylocal,1
-            do i=1,nxlocal,1
-               dFlux(i,j,k,3) = 
-     &               xfac*( fvis(i,j,k,3) - fvis(i-1,j,k,3) )
-#ifndef ONE_D
-     &              +yfac*( gvis(i,j,k,2) - gvis(i,j-1,k,2) )
-#ifndef TWO_D
-     &              +zfac*( hvis(i,j,k,4) - hvis(i,j,k-1,4) )
-#endif
-#endif
-            enddo
-         enddo
-      enddo
-c
-c     Z-Momentum
-      do k=1,nzlocal,1
-         do j=1,nylocal,1
-            do i=1,nxlocal,1
-#ifdef TWO_HALF_D
-               dFlux(i,j,k,4) = 
-     &               xfac*( fvis(i,j,k,4) - fvis(i-1,j,k,4) )
-#ifndef ONE_D
-     &              +yfac*( gvis(i,j,k,3) - gvis(i,j-1,k,3) )
-#ifndef TWO_D
-     &              +zfac*( hvis(i,j,k,2) - hvis(i,j,k-1,2) )
-#endif
-#endif
-#else
-               dFlux(i,j,k,4) = 0.d0
-#endif
-            enddo
-         enddo
-      enddo
-c
-c     X-Magnetic field
-      do k=1,nzlocal,1
-         do j=1,nylocal,1
-            do i=1,nxlocal,1
-               dFlux(i,j,k,5) = 
-     &               xfac*( fvis(i,j,k,5) - fvis(i-1,j,k,5) )
-#ifndef ONE_D
-     &              +yfac*( gvis(i,j,k,7) - gvis(i,j-1,k,7) )
-#ifndef TWO_D
-     &              +zfac*( hvis(i,j,k,6) - hvis(i,j,k-1,6) )
-#endif
-#endif
-            enddo
-         enddo
-      enddo
-c
-c     Y-Magnetic field
-      do k=1,nzlocal,1
-         do j=1,nylocal,1
-            do i=1,nxlocal,1
-               dFlux(i,j,k,6) = 
-     &               xfac*( fvis(i,j,k,6) - fvis(i-1,j,k,6) )
-#ifndef ONE_D
-     &              +yfac*( gvis(i,j,k,5) - gvis(i,j-1,k,5) )
-#ifndef TWO_D
-     &              +zfac*( hvis(i,j,k,7) - hvis(i,j,k-1,7) )
-#endif
-#endif
-            enddo
-         enddo
-      enddo
-c
-c     Z-Magnetic field
-      do k=1,nzlocal,1
-         do j=1,nylocal,1
-            do i=1,nxlocal,1
-#ifdef TWO_HALF_D
-               dFlux(i,j,k,7) = 
-     &               xfac*( fvis(i,j,k,7) - fvis(i-1,j,k,7) )
-#ifndef ONE_D
-     &              +yfac*( gvis(i,j,k,6) - gvis(i,j-1,k,6) )
-#ifndef TWO_D
-     &              +zfac*( hvis(i,j,k,5) - hvis(i,j,k-1,5) )
-#endif
-#endif
-#else
-               dFlux(i,j,k,7) = 0.d0
-#endif
-            enddo
-         enddo
-      enddo
-c
-c     Energy
-      do k=1,nzlocal,1
-         do j=1,nylocal,1
-            do i=1,nxlocal,1
-               dFlux(i,j,k,8) = 
-     &               xfac*( fvis(i,j,k,8) - fvis(i-1,j,k,8) )
-#ifndef ONE_D
-     &              +yfac*( gvis(i,j,k,8) - gvis(i,j-1,k,8) )
-#ifndef TWO_D
-     &              +zfac*( hvis(i,j,k,8) - hvis(i,j,k-1,8) )
-#endif
-#endif
-            enddo
-         enddo
-      enddo
-
-#endif
-
-      return
-      end subroutine divFlux_viscous
+      end subroutine computerhs
 c=======================================================================

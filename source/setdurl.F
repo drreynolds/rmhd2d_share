@@ -1,5 +1,14 @@
 C -*- Mode: Fortran; -*-
 c-----------------------------------------------------------------------
+c     Ravi Samtaney
+c     KAUST, Mechanical Engineering
+c
+c     Daniel R. Reynolds
+c     SMU, Mathematics
+c
+c     Copyright 2004
+c     All Rights Reserved
+c-----------------------------------------------------------------------
         module udiff
         contains
         subroutine SetDURL(durl,vl,vr,ilo,ihi)

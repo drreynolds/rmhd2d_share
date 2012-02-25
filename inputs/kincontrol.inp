@@ -1,21 +1,21 @@
 &kinsol_controls
-  tstop       = 2.0d0,
-  dtfac       = 5.0d-3,
-  theta       = 0.51d0,
+  tstop       = 1.0d3,
+  dtfac       = 1.0d1,
+  theta       = 0.5d0,
 
-  useMyPrec   = 1,
+  useMyPrec   = 0,
   freezePrec  = 0,
   initpcond   = 0,
-  msbpre      = 1,
+  msbpre      = 0,
 
   lsolver     = 0,
-  maxl        = 200,
-  maxlrst     = 3,
+  maxl        = 50,
+  maxlrst     = 0,
   useMyJac    = 0,
 
   globalstrat = 0,
   inchoice    = 3,
-  etaconst    = 1.0d-4,
+  etaconst    = 1.0d-2,
   etagamma    = 9.0d-1,
   etaalpha    = 2.0d0,
 
@@ -26,7 +26,7 @@
   mxnewtstep  = 0.0d0,
   frelerr     = 0.0d0,
 
-  kinprint    = 0,
+  kinprint    = 1,
 
   u1sc        = 1.0d0,
   u2sc        = 1.0d0,

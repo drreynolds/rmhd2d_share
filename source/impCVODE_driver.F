@@ -1,7 +1,13 @@
 c -*- Mode: Fortran; -*-
 c-----------------------------------------------------------------
+c     Ravi Samtaney
+c     KAUST, Mechanical Engineering
+c
 c     Daniel R. Reynolds
-c     UC San Diego, Mathematics
+c     SMU, Mathematics
+c
+c     Copyright 2004
+c     All Rights Reserved
 c-----------------------------------------------------------------
 c     $Log: impCVODE_driver.F,v $
 c=================================================================
@@ -338,19 +344,15 @@ c            call WriteAVSFile(ux,timeStep)
       call prof_stop(6)
 
 c     output final solver diagnostics
-      if (outnode) write(6,'(A,A,11(A,es12.5),A)') 
+      if (outnode) write(6,'(A,A,7(A,es12.5),A)') 
      &     '\n  ---------------------------------------',
      &     '\n  Runtime statistics:\n',
      &     '\n    Total Solution Time     =',prof_time(1),
      &     '\n    Total RHS Time          =',prof_time(2),
      &     '\n    Total Comm Time         =',prof_time(3),
-     &     '\n    Total Pcond Setup Time  =',prof_time(4),
-     &     '\n    Total Pcond Solve Time  =',prof_time(5),
      &     '\n    Total Diags & I/O Time  =',prof_time(6),
      &     '\n    Avg RHS Time            =',prof_time(2)/prof_count(2),
      &     '\n    Avg Comm Time           =',prof_time(3)/prof_count(3),
-     &     '\n    Avg Pcond Setup Time    =',prof_time(4)/prof_count(4),
-     &     '\n    Avg Pcond Solve Time    =',prof_time(5)/prof_count(5),
      &     '\n    Avg Diags & I/O Time    =',prof_time(6)/prof_count(6),
      &     '\n  ---------------------------------------\n'
 

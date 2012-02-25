@@ -1,6 +1,12 @@
 /*******************************************************************
+ * Ravi Samtaney                                                   *
+ * KAUST, Mechanical Engineering                                   *
+ *                                                                 *
  * Daniel R. Reynolds                                              *
- * UC San Diego, Mathematics                                       *
+ * SMU, Mathematics                                                *
+ *                                                                 *
+ * Copyright 2004                                                  *
+ * All Rights Reserved                                             *
  *-----------------------------------------------------------------*
  * This is the header file for an implementation of an NVECTOR     *
  * package, specifically suited to interface with a supplied       *
