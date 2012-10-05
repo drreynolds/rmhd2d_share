@@ -33,7 +33,7 @@ CFLAGS = -O2 # perf.
 C_INCD = -I/usr/include
 
 # SUNDIALS installation location
-SUNDROOT = /usr/local/sundials-2.3.0/intel
+SUNDROOT = /usr/local/sundials-2.5.0/intel
 
 # MPI installation location (F90 compatible), and required libs
 MPIROOT  = /usr/local/mpich2-1.0.7/intel
