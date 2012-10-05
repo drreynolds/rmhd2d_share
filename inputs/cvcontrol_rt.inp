@@ -1,6 +1,6 @@
 &cvode_controls
-  tstop       = 5.0d3,
-  dtfac       = 5.0d1,
+  tstop       = 4.0d2,
+  dtfac       = 1.0d0,
   dtinit      = 0.0d0,
   maxdt       = 0.0d0,
   mindt       = 0.0d0,
@@ -28,7 +28,7 @@
   mxerrfails  = 0,
   mxconvfails = 0,
 
-  rtol        = 1.0d-9,
+  rtol        = 1.0d-7,
 
   atol1       = 1.0d-11,
   atol2       = 1.0d-11,

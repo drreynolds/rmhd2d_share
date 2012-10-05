@@ -8,48 +8,39 @@
 ###################################################################
 
 
-# Fortran 90/95 compiler
-#F90 = g95-0.50
-F90 = ifort
+# Fortran compilers
+F90 = mpif90
+F77 = $(F90)
 
 # Fortran compile flags
-#FFLAGS = -p -g -O0 -ffixed-form -fbackslash # gnu debug
-#FFLAGS = -O2 -ffixed-form -fbackslash # gnu perf.
-#FFLAGS = -p -g -O0 -FI -assume bscc # intel debug
-FFLAGS = -O2 -FI -assume bscc # intel perf.
-
-# Fortran 77 compiler
-#F77 = g95-0.50
-F77 = ifort
-
-#F77FLAGS = -p -g -O0 -ffixed-form  # gnu debug
-#F77FLAGS = -O2 -ffixed-form  # gnu perf.
-#F77FLAGS = -p -g -O0 -FI  # intel debug
-F77FLAGS = -O2 -FI  # intel perf.
-
-# SUNDIALS-specific preprocessor directives (F-to-C conversion)
-SUND_DEFS = -DSUNDIALS_CASE_LOWER
+#FFLAGS = -p -g -O0 -fbackslash -ffpe-trap=denormal,invalid # gfortran debug
+#F77FLAGS = -p -g -O0 -ffpe-trap=denormal,invalid           # gfortran debug
+FFLAGS = -Ofast -fbackslash -ffast-math -march=native # gfortran perf.
+F77FLAGS = -Ofast -ffast-math -march=native           # gfortran perf.
 
 # C compiler
-CC = gcc-4.0.0
+CC = mpicc
 
 # C compile flags
-#CFLAGS = -p -O0 -Wall # debug
-CFLAGS = -O2 # perf.
+#CFLAGS = -p -g -O0 -Wall # debug
+CFLAGS = -Ofast -ffast-math -march=native # perf.
 
 # Location of C standard header files (stdlib.h, etc.)
-C_INCD = -I$(HOME)/apps/include
+C_INCD = -I/usr/include
+
+# SUNDIALS-specific preprocessor directives (F-to-C conversion)
+SUND_DEFS = -DSUNDIALS_CASE_LOWER -DSUNDIALS_UNDERSCORE_ONE \
+            -DSUNDIALS_DOUBLE_PRECISION
 
 # SUNDIALS installation location
-#SUNDROOT = $(HOME)/apps/sundials
-SUNDROOT = $(HOME)/apps/sundials-2.3.0
+#SUNDROOT = /usr/local/sundials-2.5.0/gnu_debug
+SUNDROOT = /usr/local/sundials-2.5.0/gnu
 
 # MPI installation location (F90 compatible), and required libs
-#MPIROOT  = $(HOME)/apps/mpich_gnu
-MPIROOT  = $(HOME)/apps/mpich_intel
-MPI_LIBS = -lmpich -lmpichf90
-MPI_INCD = -I${MPIROOT}/include -I${MPIROOT}/include/f90base
-MPI_LIBD = -L${MPIROOT}/lib
+MPIROOT  = 
+MPI_LIBS = 
+MPI_INCD = 
+MPI_LIBD = 
 
 
 ####### End of Makefile #######

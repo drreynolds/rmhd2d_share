@@ -1,0 +1,72 @@
+Building and running the reconnection test problem:
+
+Follow the instructions in the README file.  This test problem
+requires the Make.config-Recon configuration file:
+  ln -fs Make.config-Recon Make.config
+
+To build the CVODE-enabled executable, you'll type
+  make cvRecon
+
+You'll need the following files from the inputs/ directory:
+cvcontrol_recon.inp, mesh_recon.inp mhd_recon.inp prop_recon.inp.
+These should be placed in the runtime directory when you run cvRecon.
+These files should be renamed to cvcontrol.inp, mesh.inp, mhd.inp and
+prop.inp, respectively.
+
+You can then run the executable as usual:
+  ./cvRecon
+
+When running in parallel, ensure that the number of processes
+specified in mesh.inp (P = xprocs*yprocs*zprocs) matches the number
+that MPI is launched with.
+
+
+
+
+Building and running the Kelvin-Helmholtz test problem:
+
+Follow the instructions in the README file.  This test problem
+requires the Make.config-KH configuration file:
+  ln -fs Make.config-KH Make.config
+
+To build the CVODE-enabled executable, you'll type
+  make cvKH
+
+You'll need the following files from the inputs/ directory:
+cvcontrol_kh.inp, kh_init.inp, mesh_kh.inp mhd_kh.inp prop_kh.inp.
+These should be placed in the runtime directory when you run cvKH.
+The first one and last three of these files should be renamed to
+cvcontrol.inp, mesh.inp, mhd.inp and prop.inp, respectively.
+
+You can then run the executable as usual:
+  ./cvKH
+
+When running in parallel, ensure that the number of processes
+specified in mesh.inp (P = xprocs*yprocs*zprocs) matches the number
+that MPI is launched with.
+
+
+
+
+Building and running the Rayleigh-Taylor test problem:
+
+Follow the instructions in the README file.  This test problem
+requires the Make.config-RT configuration file:
+  ln -fs Make.config-RT Make.config
+
+To build the CVODE-enabled executable, you'll type
+  make cvRT
+
+You'll need the following files from the inputs/ directory:
+cvcontrol_rt.inp, mesh_rt.inp mhd_rt.inp prop_rt.inp, rm5.coef and
+rt_init.inp.  These should be placed in the runtime directory when you
+run cvRT. The first four of these files should be renamed to
+cvcontrol.inp mesh.inp, mhd.inp and prop.inp, respectively. 
+
+You can then run the executable as usual:
+  ./cvRT
+
+When running in parallel, ensure that the number of processes
+specified in mesh.inp (P = xprocs*yprocs*zprocs) matches the number
+that MPI is launched with.
+
