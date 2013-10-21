@@ -38,6 +38,7 @@ plot(times,kenergy,'b-',times,menergy,'r--',times,ienergy,'k:')
 xlabel('time')
 ylabel('energies')
 title('Energy partitioning')
+legend(('kinetic', 'magnetic', 'internal'))
 grid()
 savefig('energies.png')
 
@@ -80,13 +81,13 @@ savefig('divB_hist.png')
 # set the total number of snapshots
 Nt = times.size
 
-# only print out ~10 snapshots of each field
-if (Nt/ndump > 10):
-    ndump *= 2
-if (Nt/ndump > 10):
-    ndump *= 2
-if (Nt/ndump > 10):
-    ndump *= 2
+# # only print out ~10 snapshots of each field
+# if (Nt/ndump > 10):
+#     ndump *= 2
+# if (Nt/ndump > 10):
+#     ndump *= 2
+# if (Nt/ndump > 10):
+#     ndump *= 2
 
 # loop over snapshots, loading values and plotting
 for tstep in range(0,Nt+1,ndump):
@@ -152,7 +153,7 @@ for tstep in range(0,Nt+1,ndump):
         
     # dB contour
     figure()
-    h = imshow(log10(abs(dB)), hold=False, extent=(xl, xr, yl, yr), origin='lower')
+    h = imshow(log10(abs(dB+1.e-16)), hold=False, extent=(xl, xr, yl, yr), origin='lower')
     colorbar(h, orientation='horizontal')
     title('log(div B), t = ' + repr(round(times[tstep],4)))
     savefig('divB_' + repr(tstep).zfill(6) + '.png')

@@ -9,10 +9,10 @@ binary_flag=0 ,
  ndiag=1,
 &end
 &gridbounds
- xl=-1.57D0,
- xr=1.57D0,
- yl=-6.0D0,
- yr=6.0D0,
- zl=0.0D0,
- zr=1.0D0,
+ xl=-1.57d0,
+ xr=1.57d0,
+ yl=-6.0d0,
+ yr=6.0d0,
+ zl=0.0d0,
+ zr=1.0d0,
 &end
