@@ -1,6 +1,6 @@
 &kinsol_controls
-  tstop       = 1.0d3,
-  dtfac       = 1.0d1,
+  tstop       = 4.0d2,
+  dtfac       = 4.0d-1,
   theta       = 0.5d0,
 
   useMyPrec   = 0,
@@ -26,7 +26,7 @@
   mxnewtstep  = 0.0d0,
   frelerr     = 0.0d0,
 
-  kinprint    = 1,
+  kinprint    = 0,
 
   u1sc        = 1.0d0,
   u2sc        = 1.0d0,

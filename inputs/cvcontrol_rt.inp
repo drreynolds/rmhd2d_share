@@ -1,6 +1,6 @@
 &cvode_controls
   tstop       = 4.0d2,
-  dtfac       = 1.0d0,
+  dtfac       = 4.0d0,
   dtinit      = 0.0d0,
   maxdt       = 0.0d0,
   mindt       = 0.0d0,
